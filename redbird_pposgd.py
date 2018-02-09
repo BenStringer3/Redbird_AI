@@ -179,7 +179,8 @@ class RedbirdPposgd():
             else:
                 raise NotImplementedError
 
-            print("********** Iteration %i ************"%iters_so_far)
+            if self.rank == 0:
+                print("********** Iteration %i ************"%iters_so_far)
             seg = seg_gen.__next__()
 
             self.add_vtarg_and_adv(seg, gamma, lam)
