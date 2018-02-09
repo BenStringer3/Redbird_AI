@@ -23,7 +23,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
-        this_test = dir + "test" + str(test_n)
+        this_test = logdir + "test" + str(test_n)
 
 
     workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
@@ -47,6 +47,15 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
            )
     env.close()
 
+def str2bool(v):
+    import argparse
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -55,7 +64,7 @@ def main():
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--kind', help='type of network (small, large, dense)', default='dense')
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
-    parser.add_argument('--render', help='To render or not to render (0 or 1)', default=bool(1))
+    parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     args = parser.parse_args()
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render)
 
