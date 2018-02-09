@@ -19,6 +19,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
             os.makedirs(logdir)
         test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
         this_test = logdir + "/test" + str(test_n + 1)
+        os.makedirs(this_test)
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
     else:
