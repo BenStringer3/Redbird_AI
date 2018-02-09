@@ -66,6 +66,7 @@ def main():
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     args = parser.parse_args()
+    print("beginning training")
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render)
 
 
