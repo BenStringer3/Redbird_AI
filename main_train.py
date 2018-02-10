@@ -27,8 +27,8 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
         this_test = logdir + "test" + str(test_n)
-        if this_test > 0:
-            last_test = this_test - 1
+        if test_n > 0:
+            last_test = logdir + "test" + str(test_n - 1)
         else:
             last_test = None
         os.makedirs(this_test + 'rank_' + str(rank))
