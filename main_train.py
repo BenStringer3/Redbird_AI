@@ -5,6 +5,7 @@ import gym
 import redbird_policy
 from baselines.common import set_global_seeds
 import redbird_pposgd
+import os
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
     import baselines.common.tf_util as U
@@ -14,7 +15,6 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
 
     #set up data logging directory!
     if rank == 0: #if this is the first process
-        import os
         if (not os.path.isdir(logdir)):
             os.makedirs(logdir)
         test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
@@ -23,6 +23,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
         os.makedirs(this_test)
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
+        os.makedirs(this_test + 'rank_', rank)
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
         this_test = logdir + "test" + str(test_n)
@@ -30,7 +31,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
             last_test = this_test - 1
         else:
             last_test = None
-
+        os.makedirs(this_test + 'rank_' + str(rank))
 
     workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
     set_global_seeds(workerseed)
