@@ -23,15 +23,15 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
         os.makedirs(this_test)
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
-        os.makedirs(this_test + 'rank_', rank)
+        os.makedirs(this_test + '/rank_' + str(rank))
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
-        this_test = logdir + "test" + str(test_n)
+        this_test = logdir + "/test" + str(test_n)
         if test_n > 0:
-            last_test = logdir + "test" + str(test_n - 1)
+            last_test = logdir + "/test" + str(test_n - 1)
         else:
             last_test = None
-        os.makedirs(this_test + 'rank_' + str(rank))
+        os.makedirs(this_test + '/rank_' + str(rank))
 
     workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
     set_global_seeds(workerseed)
