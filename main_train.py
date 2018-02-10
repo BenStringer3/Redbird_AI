@@ -6,7 +6,7 @@ import redbird_policy
 from baselines.common import set_global_seeds
 import redbird_pposgd
 
-def train(env_id, num_timesteps, seed, kind, logdir, render):
+def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
     import baselines.common.tf_util as U
     rank = MPI.COMM_WORLD.Get_rank() #the id of this process
     sess = U.single_threaded_session() #tensorflow session
@@ -19,12 +19,17 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
             os.makedirs(logdir)
         test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
         this_test = logdir + "/test" + str(test_n + 1)
+        last_test =  logdir + "/test" + str(test_n)
         os.makedirs(this_test)
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
         this_test = logdir + "test" + str(test_n)
+        if this_test > 0:
+            last_test = this_test - 1
+        else:
+            last_test = None
 
 
     workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
@@ -35,7 +40,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
 
     env.seed(workerseed)
 
-    redbird = redbird_pposgd.RedbirdPposgd(rank, this_test)
+    redbird = redbird_pposgd.RedbirdPposgd(rank, this_test, last_test)
 
     redbird.learn(env, policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
@@ -44,7 +49,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render):
            optim_epochs=3, optim_stepsize=2.5e-4, optim_batchsize=32,
            gamma=0.99, lam=0.95,
            schedule='linear',
-           render=render
+           render=render, newModel=newModel
            )
     env.close()
 
@@ -66,9 +71,10 @@ def main():
     parser.add_argument('--kind', help='type of network (small, large, dense)', default='dense')
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
+    parser.add_argument('--newModel', help='Create new model or use most recently created', type=str2bool, default=True)
     args = parser.parse_args()
     print("beginning training")
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render)
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, newModel=args.newModel)
 
 
 if __name__ == '__main__':

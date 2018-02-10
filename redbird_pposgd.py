@@ -12,9 +12,10 @@ import os
 REWARD_SCALE = 10 # get rid of later
 
 class RedbirdPposgd():
-    def __init__(self, rank, this_test):
+    def __init__(self, rank, this_test, last_test):
         self.rank = rank
         self.this_test = this_test
+        self.last_test = last_test
         sess = tf.get_default_session()
         self.writer = tf.summary.FileWriter(self.this_test + '/rank_' + str(self.rank), sess.graph)
 
@@ -110,7 +111,7 @@ class RedbirdPposgd():
             callback=None, # you can do anything in the callback, since it takes locals(), globals()
             adam_epsilon=1e-5,
             schedule='constant', # annealing for stepsize parameters (epsilon and adam),
-            render
+            render, newModel
             ):
         ob_space = env.observation_space
         ac_space = env.action_space
@@ -151,6 +152,10 @@ class RedbirdPposgd():
 
         U.initialize()
         adam.sync()
+
+        if not newModel:
+            saver = tf.train.Saver()
+            saver.restore(tf.get_default_session(), self.last_test + '/model/model.ckpt')
 
         seg_gen = self.traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, render=render)
 
