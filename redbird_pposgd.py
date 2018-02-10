@@ -190,8 +190,6 @@ class RedbirdPposgd():
 
             self.add_vtarg_and_adv(seg, gamma, lam)
 
-            self.add_vtarg_and_adv(seg, gamma, lam)
-
             ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
             vpredbefore = seg["vpred"]  # predicted value function before udpate
             atarg = (atarg - atarg.mean()) / atarg.std()  # standardized advantage function estimate
