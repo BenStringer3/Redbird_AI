@@ -228,9 +228,10 @@ class RedbirdPposgd():
                 #     U.save_state('/tmp/models/' + MODEL_NAME + '.ckpt')
                 #     self.min_loss = losses[-1]
             meanlosses,_,_ = mpi_moments(losses, axis=0)
-            for (lossval, name) in zipsame(meanlosses, loss_names):
-                summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
-                self.writer.add_summary(summary, iters_so_far)
+            if self.rank == 0:
+                for (lossval, name) in zipsame(meanlosses, loss_names):
+                    summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
+                    self.writer.add_summary(summary, iters_so_far)
 
             lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
