@@ -27,7 +27,25 @@ class RedbirdPolicy(object):
 
         ob = U.get_placeholder(name="ob", dtype=tf.float32, shape=[None] + list(ob_space.shape))
 
-        if kind == 'dense': #ben's network structure
+        if kind == 'denseSplit': #ben's network structure
+            l1 = tf.layers.dense(inputs=ob, units=512 * 4, activation=tf.nn.tanh, name="l1")
+            l2 = tf.layers.dense(inputs=l1, units=512 * 3, activation=tf.nn.tanh, name="l2")
+
+            # logits branch
+            l3 = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3")
+            l4 = tf.layers.dense(l3, 64 * 4, tf.nn.tanh, name="l4")
+            l5 = tf.layers.dense(l4, 64 * 4, tf.nn.tanh, name="l5")
+            # logits = tf.layers.dense(l5, pdtype.param_shape()[0], name="logits", kernel_initializer=U.normc_initializer(0.01))
+            logits = self.plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
+            self.pd = pdtype.pdfromflat(logits)
+
+            #vpred branch
+            l3_v = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3_v")
+            l4_v = tf.layers.dense(l3_v, 64 * 4, tf.nn.tanh, name="l4_v")
+            l5_v = tf.layers.dense(l4_v, 64 * 4, tf.nn.tanh, name="l5_v")
+            self.vpred = self.plain_dense(l5_v, 1, "value", U.normc_initializer(1.0))[:, 0]
+            # self.vpred = tf.layers.dense(l5, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
+        elif kind == 'dense':
             l1 = tf.layers.dense(inputs=ob, units=512 * 4, activation=tf.nn.tanh, name="l1")
             l2 = tf.layers.dense(inputs=l1, units=512 * 3, activation=tf.nn.tanh, name="l2")
             l3 = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3")
@@ -37,7 +55,6 @@ class RedbirdPolicy(object):
             logits = self.plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
             self.pd = pdtype.pdfromflat(logits)
             self.vpred = self.plain_dense(l5, 1, "value", U.normc_initializer(1.0))[:, 0]
-            # self.vpred = tf.layers.dense(l5, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
         else:
             raise NotImplementedError
 

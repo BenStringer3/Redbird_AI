@@ -12,8 +12,9 @@ import os
 REWARD_SCALE = 10 # get rid of later
 
 class RedbirdPposgd():
-    def __init__(self, rank, this_test, last_test):
+    def __init__(self, rank, this_test, last_test, earlyTermT_ms=None):
         self.rank = rank
+        self.earlyTermT_ms = earlyTermT_ms
         self.this_test = this_test
         self.last_test = last_test
         sess = tf.get_default_session()
@@ -61,7 +62,9 @@ class RedbirdPposgd():
             acs[i] = ac
             prevacs[i] = prevac
 
-            ob, rew, new, dist_dict = env.step(ac)
+            ob, rew, new, info = env.step(ac)
+            if self.earlyTermT_ms is not None and info["time_ms"] >= self.earlyTermT_ms:
+                new = True
 
             rew = rew * REWARD_SCALE  # ben
             rews[i] = rew
@@ -155,7 +158,10 @@ class RedbirdPposgd():
 
         if not newModel:
             saver = tf.train.Saver()
-            saver.restore(tf.get_default_session(), self.last_test + '/model/model.ckpt')
+            try:
+                saver.restore(tf.get_default_session(), self.last_test + '/model/model.ckpt')
+            except tf.errors.InvalidArgumentError:
+                print('couldn''t find a valid model at that location')
 
         seg_gen = self.traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, render=render)
 

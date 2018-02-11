@@ -7,7 +7,7 @@ from baselines.common import set_global_seeds
 import redbird_pposgd
 import os
 
-def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
+def train(env_id, num_timesteps, seed, kind, logdir, render, newModel, earlyTermT_ms):
     import baselines.common.tf_util as U
     rank = MPI.COMM_WORLD.Get_rank() #the id of this process
     sess = U.single_threaded_session() #tensorflow session
@@ -41,7 +41,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel):
 
     env.seed(workerseed)
 
-    redbird = redbird_pposgd.RedbirdPposgd(rank, this_test, last_test)
+    redbird = redbird_pposgd.RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
 
     redbird.learn(env, policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
@@ -73,9 +73,10 @@ def main():
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     parser.add_argument('--newModel', help='Create new model or use most recently created', type=str2bool, default=True)
+    parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
     print("beginning training")
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, newModel=args.newModel)
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 
 if __name__ == '__main__':

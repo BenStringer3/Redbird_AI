@@ -6,7 +6,7 @@ import redbird_pposgd
 import gym
 import os
 
-def demo(env_id, seed, kind, logdir):
+def demo(env_id, seed, kind, logdir, numRuns, earlyTermT_ms=None):
     sess = U.single_threaded_session() #tensorflow session
     sess.__enter__()
 
@@ -21,7 +21,7 @@ def demo(env_id, seed, kind, logdir):
     stochastic = False
     ob_space = env.observation_space
     ac_space = env.action_space
-    pi = policy_fn("pi", ob_space, ac_space)  # Construct network for new policy
+    oldpi = policy_fn("oldpi", ob_space, ac_space)  # Construct network for new policy
 
     # ob = U.get_placeholder_cached(name="ob")
     # ac = pi.pdtype.sample_placeholder([None])
@@ -29,7 +29,7 @@ def demo(env_id, seed, kind, logdir):
     U.initialize()
 
     test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
-    var_list = pi.get_trainable_variables()
+    var_list = oldpi.get_trainable_variables()
     for vars in var_list:
         try:
             saver = tf.train.Saver({vars.name[:-2]: vars}) # the [:-2] is kinda jerry-rigged but ..
@@ -37,13 +37,17 @@ def demo(env_id, seed, kind, logdir):
         except:
             print("couldn't find" + vars.name)
 
+    for i in range(numRuns):
+        ob = env.reset()
+        done = False
+        while not done:
+            ac, vpred = oldpi.act(stochastic, ob)
+            ob, rew, done, info = env.step(ac)
+            env.render()
 
-    ob = env.reset()
+            if earlyTermT_ms is not None and info["time_ms"] >= earlyTermT_ms:
+                done = True
 
-    while not done:
-        ac, vpred = pi.act(stochastic, ob)
-        ob, rew, done, _ = env.step(ac)
-        env.render()
     env.close()
 
 def str2bool(v):
@@ -62,9 +66,11 @@ def main():
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--kind', help='type of network (small, large, dense)', default='dense')
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
+    parser.add_argument('--numRuns', help='number of times to run the sim', type=int, default=7)
+    parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
     print("beginning demo")
-    demo(env_id=args.env, seed=args.seed, kind=args.kind, logdir=args.logdir)
+    demo(env_id=args.env, seed=args.seed, kind=args.kind, logdir=args.logdir, numRuns=args.numRuns, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':
     main()
