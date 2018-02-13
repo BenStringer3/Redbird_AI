@@ -80,8 +80,8 @@ class Model(object):
             tl = timeline.Timeline(run_metadata.step_stats)
             ctf = tl.generate_chrome_trace_format()
             # os.makedirs('/tmp/timeline/')
-            with open('/tmp/timeline/timeline.json', 'w') as f:
-                f.write(ctf)
+            # with open('/tmp/timeline/timeline.json', 'w') as f:
+            #     f.write(ctf)
             return losses
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
 
