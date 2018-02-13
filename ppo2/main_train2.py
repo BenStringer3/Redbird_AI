@@ -1,11 +1,7 @@
 
-import sys
-from baselines import logger
-from baselines.common.cmd_util import make_atari_env, atari_arg_parser
-from baselines.common.vec_env.vec_frame_stack import VecFrameStack
+
 from ppo2 import Redbird_Pposgd2
 from policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy2
-import multiprocessing
 import tensorflow as tf
 import gym
 import os
