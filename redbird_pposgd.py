@@ -154,7 +154,7 @@ class RedbirdPposgd():
 
         ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) #pnew / pold
         surr1 = ratio * atarg # surrogate from conservative policy iteration
-        surr2 = tf.clip_by_value(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
+        surr2 = tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE) * atarg
         pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2))  # PPO's pessimistic surrogate (L^CLIP)
         # vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
         vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
@@ -203,12 +203,12 @@ class RedbirdPposgd():
             elif max_seconds and time.time() - tstart >= max_seconds:
                 break
 
-            if schedule == 'constant':
-                cur_lrmult = 1.0
-            elif schedule == 'linear':
-                cur_lrmult =  max(1.0 - float(timesteps_so_far) / max_timesteps, 0)
-            else:
-                raise NotImplementedError
+            # if schedule == 'constant':
+            #     cur_lrmult = 1.0
+            # elif schedule == 'linear':
+            #     cur_lrmult =  max(1.0 - float(timesteps_so_far) / max_timesteps, 0)
+            # else:
+            #     raise NotImplementedError
 
             if self.rank == 0:
                 print("********** Iteration %i ************"%iters_so_far)
@@ -225,6 +225,8 @@ class RedbirdPposgd():
             lrnow = lr(frac)
             cliprangenow = cliprange(frac)
 
+            tstart = time.time()
+
             if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob)  # update running mean/std for policy
 
             assign_old_eq_new()  # set old parameter values to new parameter values
@@ -234,8 +236,8 @@ class RedbirdPposgd():
                 losses = [] # list of tuples, each of which gives the loss for a minibatch
                 for batch in d.iterate_once(optim_batchsize):
                     #    lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
-                    *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult, batch["vpredbefore"], cliprangenow)
-                    adam.update(g, optim_stepsize * cur_lrmult)
+                    *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], lrnow, batch["vpredbefore"], cliprangenow)
+                    adam.update(g, optim_stepsize * lrnow)
                     losses.append(newlosses)
             if iters_so_far % 25 == 0:
                 os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
@@ -245,17 +247,21 @@ class RedbirdPposgd():
 
             losses = []
             for batch in d.iterate_once(optim_batchsize):
-                newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult, batch["vpredbefore"], cliprangenow)
+                newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], lrnow, batch["vpredbefore"], cliprangenow)
                 losses.append(newlosses)
                 # if losses[-1] < self.min_loss:
                 #     U.save_state('/tmp/models/' + MODEL_NAME + '.ckpt')
                 #     self.min_loss = losses[-1]
             meanlosses,_,_ = mpi_moments(losses, axis=0)
+            tnow = time.time()
+            fps = float(1 / (tnow - tstart))
             if self.rank == 0:
+                summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
+                self.writer.add_summary(summary,  iters_so_far)
                 for (lossval, name) in zipsame(meanlosses, loss_names):
                     summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
                     self.writer.add_summary(summary, iters_so_far)
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=cur_lrmult)])
+                    summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=lrnow)])
                     self.writer.add_summary(summary, iters_so_far)
 
             lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
