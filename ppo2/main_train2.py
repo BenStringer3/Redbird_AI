@@ -59,7 +59,6 @@ def train(env_id, num_timesteps, seed, policy, logdir, render, newModel, earlyTe
 
     redbird = Redbird_Pposgd2(rank, this_test, last_test, render=render, earlyTermT_ms=earlyTermT_ms)
 
-
     policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy2}[policy]
     redbird.learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=4, log_interval=1,

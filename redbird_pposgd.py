@@ -115,7 +115,7 @@ class RedbirdPposgd():
 
     def learn(self, env, policy_func, *,
             timesteps_per_actorbatch, # timesteps per actor per update
-            clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
+            clip_param, entcoeff, vf_coef, # clipping parameter epsilon, entropy coeff
             optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
             gamma, lam, # advantage estimation
             max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
@@ -161,7 +161,7 @@ class RedbirdPposgd():
         vf_losses1 = tf.square(pi.vpred- ret)
         vf_losses2 = tf.square(vpredclipped - ret)
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
-        total_loss = pol_surr + pol_entpen + vf_loss
+        total_loss = pol_surr + pol_entpen + vf_loss * vf_coef
         losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent, total_loss]
         loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent", "total"]
 
