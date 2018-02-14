@@ -7,23 +7,23 @@ import gym
 import os
 from baselines.common import set_global_seeds
 from mpi4py import MPI #parallelization stuff
-from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+# from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
-def make_IARC_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):
-    """
-    Create a wrapped, monitored SubprocVecEnv for Atari.
-    """
-    if wrapper_kwargs is None: wrapper_kwargs = {}
-    def make_env(rank): # pylint: disable=C0111
-        def _thunk():
-            env = gym.make(env_id)
-            env.seed(seed + rank)
-            # env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-            # return wrap_deepmind(env, **wrapper_kwargs)
-            return env
-        return _thunk
-    set_global_seeds(seed)
-    return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)])
+# def make_IARC_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):
+#     """
+#     Create a wrapped, monitored SubprocVecEnv for Atari.
+#     """
+#     if wrapper_kwargs is None: wrapper_kwargs = {}
+#     def make_env(rank): # pylint: disable=C0111
+#         def _thunk():
+#             env = gym.make(env_id)
+#             env.seed(seed + rank)
+#             # env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+#             # return wrap_deepmind(env, **wrapper_kwargs)
+#             return env
+#         return _thunk
+#     set_global_seeds(seed)
+#     return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)])
 
 def train(env_id, num_timesteps, seed, policy, logdir, render, newModel, earlyTermT_ms):
     import baselines.common.tf_util as U

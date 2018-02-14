@@ -50,7 +50,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel, earlyTerm
            optim_epochs=3, optim_stepsize=2.5e-4, optim_batchsize=32,
            gamma=0.99, lam=0.95,
            schedule='linear',
-           render=render, newModel=newModel
+           render=render, newModel=newModel, lr=lambda f : f * 2.5e-4
            )
     env.close()
 

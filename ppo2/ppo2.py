@@ -18,7 +18,7 @@ class Model(object):
         sess = tf.get_default_session()
 
         act_model = policy(sess, ob_space, ac_space, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, reuse=True)
+        train_model = policy(sess, ob_space, ac_space, reuse=True) # was true -ben
 
         A = train_model.pdtype.sample_placeholder([None])
         ADV = tf.placeholder(tf.float32, [None], name="ADV")
@@ -57,8 +57,6 @@ class Model(object):
         # _train = adam.update(g, optim_stepsize * cur_lrmult)
         # trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
         # _train = trainer.apply_gradients(grads)
-
-
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values

@@ -35,6 +35,7 @@ class RedbirdPposgd():
         # Initialize history arrays
         obs = np.array([ob for _ in range(horizon)])
         rews = np.zeros(horizon, 'float32')
+        prev_vpreds = np.zeros(horizon, 'float32')
         vpreds = np.zeros(horizon, 'float32')
         news = np.zeros(horizon, 'int32')
         acs = np.array([ac for _ in range(horizon)])
@@ -95,6 +96,7 @@ class RedbirdPposgd():
         """
         new = np.append(seg["new"], 0) # last element is only used for last vtarg, but we already zeroed it if last new = 1
         vpred = np.append(seg["vpred"], seg["nextvpred"])
+
         T = len(seg["rew"])
         seg["adv"] = gaelam = np.empty(T, 'float32')
         rew = seg["rew"]
@@ -105,6 +107,12 @@ class RedbirdPposgd():
             gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
         seg["tdlamret"] = seg["adv"] + seg["vpred"]
 
+    def constfn(self, val):
+        def f(_):
+            return val
+
+        return f
+
     def learn(self, env, policy_func, *,
             timesteps_per_actorbatch, # timesteps per actor per update
             clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
@@ -114,8 +122,13 @@ class RedbirdPposgd():
             callback=None, # you can do anything in the callback, since it takes locals(), globals()
             adam_epsilon=1e-5,
             schedule='constant', # annealing for stepsize parameters (epsilon and adam),
-            render, newModel
+            render, newModel, lr, cliprange=0.2
             ):
+        if isinstance(lr, float): lr = self.constfn(lr)
+        else: assert callable(lr)
+        if isinstance(cliprange, float): cliprange = self.constfn(cliprange)
+        else: assert callable(cliprange)
+
         ob_space = env.observation_space
         ac_space = env.action_space
         pi = policy_func("pi", ob_space, ac_space)  # Construct network for new policy
@@ -130,6 +143,9 @@ class RedbirdPposgd():
         ob = U.get_placeholder_cached(name="ob")
         ac = pi.pdtype.sample_placeholder([None])
 
+        OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
+        CLIPRANGE = tf.placeholder(tf.float32, [])
+
         kloldnew = oldpi.pd.kl(pi.pd)
         meankl = tf.reduce_mean(kloldnew)
         ent = pi.pd.entropy()
@@ -140,18 +156,22 @@ class RedbirdPposgd():
         surr1 = ratio * atarg # surrogate from conservative policy iteration
         surr2 = tf.clip_by_value(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg
         pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2))  # PPO's pessimistic surrogate (L^CLIP)
-        vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
+        # vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
+        vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        vf_losses1 = tf.square(pi.vpred- ret)
+        vf_losses2 = tf.square(vpredclipped - ret)
+        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
         total_loss = pol_surr + pol_entpen + vf_loss
         losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent, total_loss]
         loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent", "total"]
 
         var_list = pi.get_trainable_variables()
-        lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
+        lossandgrad = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses + [U.flatgrad(total_loss, var_list)])
         adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
         assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
             for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
-        compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
+        compute_losses = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses)
 
         U.initialize()
         adam.sync()
@@ -199,8 +219,11 @@ class RedbirdPposgd():
             ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
             vpredbefore = seg["vpred"]  # predicted value function before udpate
             atarg = (atarg - atarg.mean()) / atarg.std()  # standardized advantage function estimate
-            d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=True)
+            d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret, vpredbefore=vpredbefore), shuffle=True)
             optim_batchsize = optim_batchsize or ob.shape[0]
+            frac = 1.0 - (timesteps_so_far - 1.0) / max_timesteps
+            lrnow = lr(frac)
+            cliprangenow = cliprange(frac)
 
             if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob)  # update running mean/std for policy
 
@@ -211,7 +234,7 @@ class RedbirdPposgd():
                 losses = [] # list of tuples, each of which gives the loss for a minibatch
                 for batch in d.iterate_once(optim_batchsize):
                     #    lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
-                    *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                    *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult, batch["vpredbefore"], cliprangenow)
                     adam.update(g, optim_stepsize * cur_lrmult)
                     losses.append(newlosses)
             if iters_so_far % 25 == 0:
@@ -222,7 +245,7 @@ class RedbirdPposgd():
 
             losses = []
             for batch in d.iterate_once(optim_batchsize):
-                newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                newlosses = compute_losses(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult, batch["vpredbefore"], cliprangenow)
                 losses.append(newlosses)
                 # if losses[-1] < self.min_loss:
                 #     U.save_state('/tmp/models/' + MODEL_NAME + '.ckpt')
