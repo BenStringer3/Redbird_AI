@@ -255,6 +255,8 @@ class RedbirdPposgd():
                 for (lossval, name) in zipsame(meanlosses, loss_names):
                     summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
                     self.writer.add_summary(summary, iters_so_far)
+                    summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=cur_lrmult)])
+                    self.writer.add_summary(summary, iters_so_far)
 
             lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
