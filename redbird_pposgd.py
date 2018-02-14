@@ -7,6 +7,7 @@ import time
 from mpi4py import MPI
 from baselines.common.mpi_moments import mpi_moments
 import os
+from baselines.common import explained_variance
 
 
 REWARD_SCALE = 10 # get rid of later
@@ -256,8 +257,11 @@ class RedbirdPposgd():
             tnow = time.time()
             fps = float(1 / (tnow - tstart))
             if self.rank == 0:
+                ev = explained_variance(seg["vpred"], seg["tdlamret"])
                 summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
                 self.writer.add_summary(summary,  iters_so_far)
+                summary = tf.Summary(value=[tf.Summary.Value(tag="explained_variance", simple_value=ev)])
+                self.writer.add_summary(summary, iters_so_far)
                 for (lossval, name) in zipsame(meanlosses, loss_names):
                     summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
                     self.writer.add_summary(summary, iters_so_far)
