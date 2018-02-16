@@ -48,7 +48,7 @@ class Model(object):
         if max_grad_norm is not None:
             general_grads, _grad_norm = tf.clip_by_global_norm(general_grads, max_grad_norm)
         general_grads = list(zip(general_grads, general_params))
-        general_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+        general_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="general_adam")
         general_train = general_trainer.apply_gradients(general_grads)
 
         with tf.variable_scope('pi_layers'):
@@ -57,7 +57,7 @@ class Model(object):
         if max_grad_norm is not None:
             pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
         pi_grads = list(zip(pi_grads, pi_params))
-        pi_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+        pi_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="pi_adam")
         pi_train = pi_trainer.apply_gradients(pi_grads)
 
         with tf.variable_scope('vf_layers'):
@@ -66,8 +66,8 @@ class Model(object):
         if max_grad_norm is not None:
             vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
         vf_grads = list(zip(vf_grads, vf_params))
-        vf_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
-        vf_train = vf_trainer.apply_gradients(vf_grads)
+        vf_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="vf_adam")
+        vf_train = vf_trainer.apply_gradients(general_grads + vf_grads + pi_grads)
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
@@ -78,7 +78,7 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, general_train, pi_train, vf_train],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, vf_train],
                 td_map
             )[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
@@ -90,7 +90,7 @@ class Model(object):
         def load(load_path):
             loaded_params = joblib.load(load_path)
             restores = []
-            for p, loaded_p in zip([general_params, pi_params, vf_params], loaded_params):
+            for p, loaded_p in zip(general_params + vf_params + pi_params, loaded_params):
                 restores.append(p.assign(loaded_p))
             sess.run(restores)
             # If you want to load weights, also save/load observation scaling inside VecNormalize
