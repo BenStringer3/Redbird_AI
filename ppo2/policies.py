@@ -169,11 +169,17 @@ class MlpPolicy(object):
         self.value = value
 
 class MlpPolicy2(object):
-    def __init__(self, sess, ob_space, ac_space,  reuse=False): #pylint: disable=W0613
-        ob_shape = ob_space.shape
-        actdim = ac_space.shape[0]
-        X = tf.placeholder(tf.float32, shape= [None] + list(ob_space.shape) , name='Ob') #obs
-        pdtype = make_pdtype(ac_space)
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
+        # ob_shape = ob_space.shape
+        # actdim = ac_space.shape[0]
+        # # X = tf.placeholder(tf.float32, shape= [None] + list(ob_space.shape) , name='Ob') #obs
+        # X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
+        # # pdtype = make_pdtype(ac_space)
+
+        nh, nw, nc = ob_space.shape
+        ob_shape = (nbatch, nh, nw, nc)
+        nact = ac_space.n
+        X = tf.placeholder(tf.float32, ob_shape)  # obs
 
         def plain_dense(x, size, name, weight_init=None, bias=True):
             w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
@@ -193,8 +199,8 @@ class MlpPolicy2(object):
             l4 = tf.layers.dense(l3, 64 * 4, tf.nn.tanh, name="l4")
             l5 = tf.layers.dense(l4, 64 * 4, tf.nn.tanh, name="l5")
             # logits = tf.layers.dense(l5, pdtype.param_shape()[0], name="logits", kernel_initializer=U.normc_initializer(0.01))
-            logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
-
+            # logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
+            logits = plain_dense(l5, nact, "logits", U.normc_initializer(0.01))
 
             # vpred branch
             l3_v = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3_v")
@@ -209,29 +215,86 @@ class MlpPolicy2(object):
             # h1 = activ(fc(X, 'vf_fc1', nh=64, init_scale=np.sqrt(2)))
             # h2 = activ(fc(h1, 'vf_fc2', nh=64, init_scale=np.sqrt(2)))
             # vf = fc(h2, 'vf', 1)[:,0]
-            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]],
+            # logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]],
+            logstd = tf.get_variable(name="logstd", shape=[1, actdim],
                 initializer=tf.zeros_initializer())
 
-        # pdparam = tf.concat([logits, pi * 0.0 + logstd], axis=1)
+        pdparam = tf.concat([logits, logits * 0.0 + logstd], axis=1)
 
         self.pdtype = make_pdtype(ac_space)
-        self.pd = self.pdtype.pdfromflat(logits)
+        self.pd = self.pdtype.pdfromflat(pdparam)
 
         a0 = self.pd.sample()
         neglogp0 = self.pd.neglogp(a0)
         self.initial_state = None
 
         def step(ob, *_args, **_kwargs):
-            a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob[None]})
+            a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
             return a[0], v, self.initial_state, neglogp
 
         def value(ob, *_args, **_kwargs):
-            return sess.run(vf, {X:ob[None]})
+            return sess.run(vf, {X:ob})
 
 
 
         self.X = X
         self.pi = logits
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+class MlpPolicy3(object):
+
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
+        # nh, nw, nc = ob_space.shape
+        ob_shape = (nbatch, ob_space.shape[0])
+        nact = np.sum(ac_space.nvec)
+        X = tf.placeholder(tf.float32, ob_shape) #obs
+
+        def plain_dense(x, size, name, weight_init=None, bias=True):
+            w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
+            ret = tf.matmul(x, w)
+            if bias:
+                b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
+                return ret + b
+            else:
+                return ret
+
+        with tf.variable_scope("model", reuse=reuse):
+            l1 = tf.layers.dense(inputs=X, units=512 * 4, activation=tf.nn.tanh, name="l1")
+            l2 = tf.layers.dense(inputs=l1, units=512 * 3, activation=tf.nn.tanh, name="l2")
+
+            # logits branch
+            l3 = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3")
+            l4 = tf.layers.dense(l3, 64 * 4, tf.nn.tanh, name="l4")
+            l5 = tf.layers.dense(l4, 64 * 4, tf.nn.tanh, name="l5")
+            pi = tf.layers.dense(l5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+            # logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
+            # pi = plain_dense(l5, nact, "logits", U.normc_initializer(0.01))
+
+            # vpred branch
+            l3_v = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3_v")
+            l4_v = tf.layers.dense(l3_v, 64 * 4, tf.nn.tanh, name="l4_v")
+            l5_v = tf.layers.dense(l4_v, 64 * 4, tf.nn.tanh, name="l5_v")
+            # vf = plain_dense(l5_v, 1, "value", U.normc_initializer(1.0))[:, 0]
+            vf = tf.layers.dense(l5_v, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
+
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pi)
+
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = None
+
+        def step(ob, *_args, **_kwargs):
+            a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
+            return a, v, self.initial_state, neglogp
+
+        def value(ob, *_args, **_kwargs):
+            return sess.run(vf, {X:ob})
+
+        self.X = X
+        self.pi = pi
         self.vf = vf
         self.step = step
         self.value = value
