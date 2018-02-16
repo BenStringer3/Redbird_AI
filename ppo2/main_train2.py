@@ -32,7 +32,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     set_global_seeds(seed)
     return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)])
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel):
 
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
@@ -42,14 +42,15 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms):
     config.gpu_options.allow_growth = True #pylint: disable=E1101
     tf.Session(config=config).__enter__()
 
-    env = VecFrameStack(make_IARC_env(env_id, 32, seed, earlyTerminationTime_ms), 16)
+    env = VecFrameStack(make_IARC_env(env_id, 64, seed, earlyTerminationTime_ms), 32)
     policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
-        lam=0.95, gamma=0.99, noptepochs=4, log_interval=1,
+        lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
         ent_coef=.01,
         lr=lambda f : f * 2.5e-4,
         cliprange=lambda f : f * 0.1,
-        total_timesteps=int(num_timesteps * 1.1), save_interval=500)
+        total_timesteps=int(num_timesteps * 1.1),
+        save_interval=500, loadModel=loadModel)
 
 def str2bool(v):
     import argparse
@@ -70,7 +71,7 @@ def main():
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
-    parser.add_argument('--newModel', help='Create new model or use most recently created', type=str2bool, default=True)
+    parser.add_argument('--model', help='Model path', default=None)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
 
@@ -79,12 +80,11 @@ def main():
         os.makedirs(args.logdir)
     test_n = len(list(n for n in os.listdir(args.logdir) if n.startswith('test')))
     this_test = args.logdir + "/test" + str(test_n + 1)
-    last_test = args.logdir + "/test" + str(test_n)
     os.makedirs(this_test)
     logger.configure(this_test, ['tensorboard'])
 
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms) #, logdir=args.logdir, render=args.render,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':
