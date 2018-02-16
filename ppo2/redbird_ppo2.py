@@ -78,19 +78,19 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, loss, general_train, pi_train, vf_train],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, general_train, pi_train, vf_train],
                 td_map
             )[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
-            ps = sess.run(params)
+            ps = sess.run([general_params, pi_params, vf_params])
             joblib.dump(ps, save_path)
 
         def load(load_path):
             loaded_params = joblib.load(load_path)
             restores = []
-            for p, loaded_p in zip(params, loaded_params):
+            for p, loaded_p in zip([general_params, pi_params, vf_params], loaded_params):
                 restores.append(p.assign(loaded_p))
             sess.run(restores)
             # If you want to load weights, also save/load observation scaling inside VecNormalize
