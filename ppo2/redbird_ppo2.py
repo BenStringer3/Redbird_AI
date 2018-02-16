@@ -31,22 +31,43 @@ class Model(object):
         vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
         vf_losses1 = tf.square(vpred - R)
         vf_losses2 = tf.square(vpredclipped - R)
-        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
+        vf_loss_ = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
         pg_losses = -ADV * ratio
         pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
-        with tf.variable_scope('model'):
-            params = tf.trainable_variables()
-        grads = tf.gradients(loss, params)
+        pi_loss = pg_loss - entropy * ent_coef
+        vf_loss = vf_loss_ * vf_coef
+        general_loss = pi_loss + vf_loss
+
+        with tf.variable_scope('general_layers'):
+            general_params = tf.trainable_variables()
+        general_grads = tf.gradients(general_loss, general_params)
         if max_grad_norm is not None:
-            grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
-        grads = list(zip(grads, params))
-        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
-        _train = trainer.apply_gradients(grads)
+            general_grads, _grad_norm = tf.clip_by_global_norm(general_grads, max_grad_norm)
+        general_grads = list(zip(general_grads, general_params))
+        general_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+        general_train = general_trainer.apply_gradients(general_grads)
+
+        with tf.variable_scope('pi_layers'):
+            pi_params = tf.trainable_variables()
+        pi_grads = tf.gradients(pi_loss, pi_params)
+        if max_grad_norm is not None:
+            pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
+        pi_grads = list(zip(pi_grads, pi_params))
+        pi_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+        pi_train = pi_trainer.apply_gradients(pi_grads)
+
+        with tf.variable_scope('vf_layers'):
+            vf_params = tf.trainable_variables()
+        vf_grads = tf.gradients(vf_loss, vf_params)
+        if max_grad_norm is not None:
+            vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
+        vf_grads = list(zip(vf_grads, vf_params))
+        vf_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+        vf_train = vf_trainer.apply_gradients(vf_grads)
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
@@ -57,7 +78,7 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, loss, _train],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, loss, general_train, pi_train, vf_train],
                 td_map
             )[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']

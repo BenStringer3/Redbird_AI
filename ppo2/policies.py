@@ -260,10 +260,11 @@ class MlpPolicy3(object):
             else:
                 return ret
 
-        with tf.variable_scope("model", reuse=reuse):
+        with tf.variable_scope("general_layers", reuse=reuse):
             l1 = tf.layers.dense(inputs=X, units=512 * 4, activation=tf.nn.tanh, name="l1")
             l2 = tf.layers.dense(inputs=l1, units=512 * 3, activation=tf.nn.tanh, name="l2")
 
+        with tf.variable_scope("pi_layers", reuse=reuse):
             # logits branch
             l3 = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3")
             l4 = tf.layers.dense(l3, 64 * 4, tf.nn.tanh, name="l4")
@@ -272,6 +273,7 @@ class MlpPolicy3(object):
             # logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
             # pi = plain_dense(l5, nact, "logits", U.normc_initializer(0.01))
 
+        with tf.variable_scope("vf_layers", reuse=reuse):
             # vpred branch
             l3_v = tf.layers.dense(l2, 512 * 2, tf.nn.tanh, name="l3_v")
             l4_v = tf.layers.dense(l3_v, 64 * 4, tf.nn.tanh, name="l4_v")
