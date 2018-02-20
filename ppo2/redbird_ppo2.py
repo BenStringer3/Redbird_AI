@@ -84,16 +84,25 @@ class Model(object):
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
-            ps = sess.run([general_params, pi_params, vf_params])
-            joblib.dump(ps, save_path)
+            # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            saver = tf.train.Saver()
+            saver.save(tf.get_default_session(), save_path)
+            # ps = sess.run(general_params + vf_params + pi_params)
+            # joblib.dump(ps, save_path)
 
         def load(load_path):
-            loaded_params = joblib.load(load_path)
-            restores = []
-            for p, loaded_p in zip(general_params + vf_params + pi_params, loaded_params):
-                restores.append(p.assign(loaded_p))
-            sess.run(restores)
-            # If you want to load weights, also save/load observation scaling inside VecNormalize
+            saver = tf.train.Saver()
+            try:
+                saver.restore(tf.get_default_session(), load_path)
+            except tf.errors.InvalidArgumentError:
+                print('couldn''t find a valid model at that location')
+            # loaded_params = joblib.load(load_path)
+            # restores = []
+            # for p, loaded_p in zip(general_params + vf_params + pi_params, loaded_params):
+            #     restores.append(p.assign(loaded_p))
+            # sess.run(restores)
+            # # If you want to load weights, also save/load observation scaling inside VecNormalize
 
         self.train = train
         self.train_model = train_model
@@ -192,10 +201,10 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm)
-    if save_interval and logger.get_dir():
-        import cloudpickle
-        with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
-            fh.write(cloudpickle.dumps(make_model))
+    # if save_interval and logger.get_dir():
+    #     import cloudpickle
+    #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
+    #         fh.write(cloudpickle.dumps(make_model))
     model = make_model()
     if loadModel is not None:
         model.load(loadModel)

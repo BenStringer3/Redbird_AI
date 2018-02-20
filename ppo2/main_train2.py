@@ -70,7 +70,6 @@ def main():
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
-    parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     parser.add_argument('--model', help='Model path', default=None)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
