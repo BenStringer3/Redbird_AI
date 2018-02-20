@@ -22,9 +22,9 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False):
     model = make_model()
     if loadModel is not None:
         model.load(loadModel)
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=None, lam=None, render=render)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=0.99, lam=0.95, demo=True)
 
-    for update in range(1, 1e4):
+    for update in range(1, 100):
         obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run()  # pylint: disable=E0632
 
     env.close()

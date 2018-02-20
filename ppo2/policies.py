@@ -249,7 +249,7 @@ class MlpPolicy3(object):
         # nh, nw, nc = ob_space.shape
         ob_shape = (nbatch, ob_space.shape[0])
         nact = np.sum(ac_space.nvec)
-        X = tf.placeholder(tf.float32, ob_shape) #obs
+        X = tf.placeholder(tf.float32, ob_shape, name="ob") #obs
 
         def plain_dense(x, size, name, weight_init=None, bias=True):
             w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)

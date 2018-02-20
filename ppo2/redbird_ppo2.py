@@ -87,16 +87,29 @@ class Model(object):
             # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             saver = tf.train.Saver()
-            saver.save(tf.get_default_session(), save_path)
+            var_list = tf.trainable_variables()
+            saver.save(var_list, save_path)
             # ps = sess.run(general_params + vf_params + pi_params)
             # joblib.dump(ps, save_path)
 
+
         def load(load_path):
-            saver = tf.train.Saver()
-            try:
-                saver.restore(tf.get_default_session(), load_path)
-            except tf.errors.InvalidArgumentError:
-                print('couldn''t find a valid model at that location')
+            print('loading old model')
+            var_list = tf.trainable_variables()
+            for vars in var_list:
+                try:
+                    saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+                    saver.restore(tf.get_default_session(), load_path)
+                    print("found " + vars.name)
+                except:
+                    print("couldn't find " + vars.name)
+            print('finished loading model')
+            # saver = tf.train.Saver()
+            # try:
+            #     saver.restore(tf.get_default_session(), load_path)
+            # except tf.errors.InvalidArgumentError:
+            #     print('couldn''t find a valid model at that location')
+
             # loaded_params = joblib.load(load_path)
             # restores = []
             # for p, loaded_p in zip(general_params + vf_params + pi_params, loaded_params):
@@ -116,10 +129,14 @@ class Model(object):
 
 class Runner(object):
 
-    def __init__(self, *, env, model, nsteps, gamma, lam):
+    def __init__(self, *, env, model, nsteps, gamma, lam, demo=False):
+        self.demo=demo
         self.env = env
         self.model = model
-        nenv = env.num_envs
+        if not self.demo:
+            nenv = env.num_envs
+        else:
+            nenv = 1
         self.obs = np.zeros((nenv,) + env.observation_space.shape, dtype=model.train_model.X.dtype.name)
         self.obs[:] = env.reset()
         self.gamma = gamma
@@ -140,9 +157,11 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-            for info in infos:
-                maybeepinfo = info.get('episode')
-                if maybeepinfo: epinfos.append(maybeepinfo)
+            if self.demo:
+                self.env.render()
+            # for info in infos:
+            #     maybeepinfo = info.get('episode')
+            #     if maybeepinfo: epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -166,8 +185,11 @@ class Runner(object):
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
         mb_returns = mb_advs + mb_values
-        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
+        if not self.demo:
+            return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
+                mb_states, epinfos)
+        else:
+            return mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs,  mb_states, epinfos
 # obs, returns, masks, actions, values, neglogpacs, states = runner.run()
 def sf01(arr):
     """
@@ -184,7 +206,7 @@ def constfn(val):
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0, loadModel=None):
+            save_interval=0, loadModel=None, demo=False):
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -208,7 +230,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     model = make_model()
     if loadModel is not None:
         model.load(loadModel)
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, demo=demo)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()
@@ -269,7 +291,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
             checkdir = osp.join(logger.get_dir(), 'checkpoints')
             os.makedirs(checkdir, exist_ok=True)
-            savepath = osp.join(checkdir, '%.5i'%update)
+            savepath = osp.join(checkdir, '%.5i.ckpt'%update)
             print('Saving to', savepath)
             model.save(savepath)
     env.close()
