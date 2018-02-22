@@ -34,7 +34,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     ret= SubprocVecEnv(envs)
     return ret
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv):
     from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -63,7 +63,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     set_global_seeds(seed)
     #end mujoco style
 
-    envs = [make_env(i) for i in range(32)]
+    envs = [make_env(i) for i in range(nenv)]
     env = SubprocVecEnv(envs)
     env = VecNormalize(env)
 
@@ -94,6 +94,7 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'mlp'], default='mlp')
     parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
+    parser.add_argument('--nenv', help='Number of environments to run', default=int(5))
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
@@ -110,7 +111,7 @@ def main():
     logger.configure(this_test, ['tensorboard'])
 
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model) #, logdir=args.logdir, render=args.render,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':

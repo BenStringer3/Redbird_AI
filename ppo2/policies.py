@@ -243,13 +243,22 @@ class MlpPolicy2(object):
         self.step = step
         self.value = value
 
+
+
 class MlpPolicy3(object):
 
     def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
+        from gym import spaces
         # nh, nw, nc = ob_space.shape
         # ob_shape = (nbatch, nh, nw, nc)
         ob_shape = (nbatch, ob_space.shape[0])
-        nact = np.sum(ac_space.nvec)
+        if isinstance(ac_space, spaces.Dict):
+            nact = 0
+            for key, space in ac_space.spaces.items():
+                nact = nact + np.sum(space.shape)
+        else:
+            nact = np.sum(ac_space.nvec)
+
         X = tf.placeholder(tf.float32, ob_shape, "X") #obs
 
         def plain_dense(x, size, name, weight_init=None, bias=True):
@@ -281,19 +290,41 @@ class MlpPolicy3(object):
             # vf = plain_dense(l4_v, 1, "value", U.normc_initializer(1.0))[:, 0]
             vf = tf.layers.dense(l4_v, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
 
-        self.pdtype = make_pdtype(ac_space)
-        self.pd = self.pdtype.pdfromflat(pi)
+        if isinstance(ac_space, spaces.Dict):
+            self.pdtype0 = make_pdtype(ac_space.spaces["aav_pos"])
+            self.pd0 = self.pdtype0.pdfromflat(pi)
 
-        a0 = self.pd.sample()
-        neglogp0 = self.pd.neglogp(a0)
-        self.initial_state = None
+            a0 = self.pd0.sample()
+            neglogp0 = self.pd0.neglogp(a0)
 
-        def step(ob, *_args, **_kwargs):
-            a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
-            return a, v, self.initial_state, neglogp
+            self.pdtype1 = make_pdtype(ac_space.spaces["exec"])
+            self.pd1 = self.pdtype1.pdfromflat(pi)
 
-        def value(ob, *_args, **_kwargs):
-            return sess.run(vf, {X:ob})
+            a1 = self.pd1.sample()
+            neglogp1 = self.pd1.neglogp(a1)
+
+            self.pdtype.sample_placeholder = tf.stack([self.pdtype0.sample_placeholder([None]), tf.cast(self.pdtype1.sample_placeholder([None]), tf.float32)], axis=0)
+
+            def step(ob, *_args, **_kwargs):
+                a, v, neglogp = sess.run([[a0, a1], vf, [neglogp0, neglogp1]], {X:ob})
+                return a, v, self.initial_state, neglogp
+
+            def value(ob, *_args, **_kwargs):
+                return sess.run(vf, {X:ob})
+        else:
+            self.pdtype = make_pdtype(ac_space)
+            self.pd = self.pdtype.pdfromflat(pi)
+
+            a0 = self.pd.sample()
+            neglogp0 = self.pd.neglogp(a0)
+            self.initial_state = None
+
+            def step(ob, *_args, **_kwargs):
+                a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
+                return a, v, self.initial_state, neglogp
+
+            def value(ob, *_args, **_kwargs):
+                return sess.run(vf, {X:ob})
 
         self.X = X
         self.pi = pi
