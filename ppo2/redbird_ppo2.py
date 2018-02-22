@@ -42,32 +42,28 @@ class Model(object):
         vf_loss = vf_loss_ * vf_coef
         general_loss = pi_loss + vf_loss
 
-        with tf.variable_scope('general_layers'):
-            general_params = tf.trainable_variables()
+        general_params = tf.trainable_variables("general_layers")
+        pi_params = tf.trainable_variables("pi_layers")
+        vf_params = tf.trainable_variables("vf_layers")
+
         general_grads = tf.gradients(general_loss, general_params)
+        pi_grads = tf.gradients(pi_loss, pi_params)
+        vf_grads = tf.gradients(vf_loss, vf_params)
+
         if max_grad_norm is not None:
             general_grads, _grad_norm = tf.clip_by_global_norm(general_grads, max_grad_norm)
         general_grads = list(zip(general_grads, general_params))
-        general_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="general_adam")
-        general_train = general_trainer.apply_gradients(general_grads)
 
-        with tf.variable_scope('pi_layers'):
-            pi_params = tf.trainable_variables()
-        pi_grads = tf.gradients(pi_loss, pi_params)
         if max_grad_norm is not None:
             pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
         pi_grads = list(zip(pi_grads, pi_params))
-        pi_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="pi_adam")
-        pi_train = pi_trainer.apply_gradients(pi_grads)
 
-        with tf.variable_scope('vf_layers'):
-            vf_params = tf.trainable_variables()
-        vf_grads = tf.gradients(vf_loss, vf_params)
         if max_grad_norm is not None:
             vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
         vf_grads = list(zip(vf_grads, vf_params))
-        vf_trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="vf_adam")
-        vf_train = vf_trainer.apply_gradients(general_grads + vf_grads + pi_grads)
+
+        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
+        _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
@@ -78,28 +74,30 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, vf_train],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],
                 td_map
             )[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
+
             # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            saver = tf.train.Saver()
+            saver = tf.train.Saver(var_list=tf.trainable_variables())
             var_list = tf.trainable_variables()
-            saver.save(var_list, save_path)
+            saver.save(tf.get_default_session(), save_path)
             # ps = sess.run(general_params + vf_params + pi_params)
             # joblib.dump(ps, save_path)
 
 
         def load(load_path):
             print('loading old model')
+            # from tensorflow.contrib.framework.python.framework.checkpoint_utils import  list_variables
             var_list = tf.trainable_variables()
             for vars in var_list:
                 try:
                     saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
-                    saver.restore(tf.get_default_session(), load_path)
+                    saver.restore(tf.get_default_session(), load_path + '.ckpt')
                     print("found " + vars.name)
                 except:
                     print("couldn't find " + vars.name)
@@ -159,9 +157,10 @@ class Runner(object):
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
             if self.demo:
                 self.env.render()
-            # for info in infos:
-            #     maybeepinfo = info.get('episode')
-            #     if maybeepinfo: epinfos.append(maybeepinfo)
+            else:
+                for info in infos:
+                    maybeepinfo = info.get('episode')
+                    if maybeepinfo: epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -228,8 +227,18 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
     #         fh.write(cloudpickle.dumps(make_model))
     model = make_model()
+    writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
+    writer.close()
     if loadModel is not None:
         model.load(loadModel)
+        import pickle
+        try:
+            with open(loadModel + '.pik', 'rb') as f:
+                env.ob_rms = pickle.load(f)
+            print('found observation scaling')
+        except:
+            print('could not find observation scaling')
+        # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
     runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, demo=demo)
 
     epinfobuf = deque(maxlen=100)
@@ -294,6 +303,10 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             savepath = osp.join(checkdir, '%.5i.ckpt'%update)
             print('Saving to', savepath)
             model.save(savepath)
+            import pickle
+            data = env.ob_rms
+            with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
+                pickle.dump(env.ob_rms, f, -1)
     env.close()
 
 def safemean(xs):

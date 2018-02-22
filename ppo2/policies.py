@@ -247,9 +247,10 @@ class MlpPolicy3(object):
 
     def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
         # nh, nw, nc = ob_space.shape
+        # ob_shape = (nbatch, nh, nw, nc)
         ob_shape = (nbatch, ob_space.shape[0])
         nact = np.sum(ac_space.nvec)
-        X = tf.placeholder(tf.float32, ob_shape, name="ob") #obs
+        X = tf.placeholder(tf.float32, ob_shape, "X") #obs
 
         def plain_dense(x, size, name, weight_init=None, bias=True):
             w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
@@ -261,7 +262,8 @@ class MlpPolicy3(object):
                 return ret
 
         with tf.variable_scope("general_layers", reuse=reuse):
-            l1 = tf.layers.dense(inputs=X, units=512 * 2, activation=tf.nn.tanh, name="l1")
+            ob = X
+            l1 = tf.layers.dense(inputs=ob, units=512 * 2, activation=tf.nn.tanh, name="l1")
             l2 = tf.layers.dense(inputs=l1, units=512 * 2, activation=tf.nn.tanh, name="l2")
 
         with tf.variable_scope("pi_layers", reuse=reuse):

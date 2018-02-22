@@ -7,15 +7,15 @@ from redbird_ppo2 import learn
 from policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
 import multiprocessing
 import tensorflow as tf
-
-
+import gym
+from baselines.common import set_global_seeds
+from baselines.bench import Monitor
+import os
 
 def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs=None, start_index=0):
     import gym
-    from baselines.common import set_global_seeds
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-    from baselines.bench import Monitor
-    import os
+
     """
     Create a wrapped, monitored SubprocVecEnv for Atari.
     """
@@ -30,9 +30,14 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
             return env
         return _thunk
     set_global_seeds(seed)
-    return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)])
+    envs = [make_env(i + start_index) for i in range(num_env)]
+    ret= SubprocVecEnv(envs)
+    return ret
 
 def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel):
+    from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+    from baselines.common.vec_env.vec_normalize import VecNormalize
+    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
@@ -42,8 +47,30 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     config.gpu_options.allow_growth = True #pylint: disable=E1101
     tf.Session(config=config).__enter__()
 
-    env = VecFrameStack(make_IARC_env(env_id, 64, seed, earlyTerminationTime_ms), 32)
+    #begin mujoco style
+    def make_env(rank):
+        def _thunk():
+            from baselines import bench
+            env = gym.make(env_id)
+            env.seed(seed + rank)
+            env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
+            # env = bench.Monitor(env, logger.get_dir())
+            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+            return env
+        return _thunk
+    # env = DummyVecEnv([make_env])
+    # env = VecNormalize(env)
+    set_global_seeds(seed)
+    #end mujoco style
+
+    envs = [make_env(i) for i in range(32)]
+    env = SubprocVecEnv(envs)
+    env = VecNormalize(env)
+
     policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
+
+    # env = VecFrameStack(make_IARC_env(env_id, 8, seed, earlyTerminationTime_ms), 4)
+
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
         ent_coef=.01,
