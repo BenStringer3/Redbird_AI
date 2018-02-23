@@ -94,7 +94,7 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'mlp'], default='mlp')
     parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
-    parser.add_argument('--nenv', help='Number of environments to run', default=int(5))
+    parser.add_argument('--nenv', help='Number of environments to run',type = int, default=int(5))
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
