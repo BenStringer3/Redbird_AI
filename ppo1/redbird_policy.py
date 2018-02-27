@@ -67,7 +67,7 @@ class RedbirdPolicy(object):
         self._act = U.function([stochastic, ob], [ac, self.vpred])
 
     def act(self, stochastic, ob):
-        ac1, vpred1 =  self._act(stochastic, ob[None])
+        ac1, vpred1 =  self._act(stochastic, ob) # [None])  #ben
         return ac1[0], vpred1#[0] #ben
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.scope)

@@ -8,6 +8,9 @@ from mpi4py import MPI
 from baselines.common.mpi_moments import mpi_moments
 import os
 from baselines.common import explained_variance
+from baselines import logger
+import os.path as osp
+import joblib
 
 
 REWARD_SCALE = 10 # get rid of later
@@ -44,7 +47,6 @@ class RedbirdPposgd():
 
         while True:
             prevac = ac
-
             ac, vpred = pi.act(stochastic, ob)
 
             #tensorboard logging
@@ -64,11 +66,13 @@ class RedbirdPposgd():
             acs[i] = ac
             prevacs[i] = prevac
 
+            ac = np.expand_dims(ac, 0)
             ob, rew, new, info = env.step(ac)
-            if self.earlyTermT_ms is not None and info["time_ms"] >= self.earlyTermT_ms:
-                new = True
+            # ob = ob [0,:] #ben
+            # if self.earlyTermT_ms is not None and info["time_ms"] >= self.earlyTermT_ms:
+            #     new = True
 
-            rew = rew * REWARD_SCALE  # ben
+            # rew = rew * REWARD_SCALE  # ben
             rews[i] = rew
             cur_ep_ret += rew
             cur_ep_len += 1
@@ -123,7 +127,7 @@ class RedbirdPposgd():
             callback=None, # you can do anything in the callback, since it takes locals(), globals()
             adam_epsilon=1e-5,
             schedule='constant', # annealing for stepsize parameters (epsilon and adam),
-            render, newModel, lr, cliprange=0.2
+            render, loadModel, lr, cliprange=0.2, save_interval=200
             ):
         if isinstance(lr, float): lr = self.constfn(lr)
         else: assert callable(lr)
@@ -176,13 +180,29 @@ class RedbirdPposgd():
 
         U.initialize()
         adam.sync()
+        # if save_interval and logger.get_dir():
+        #     import cloudpickle
+        #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
+        #         fh.write(cloudpickle.dumps(make_model))
+        if loadModel is not None:
+            print('loading old model')
+            var_list = tf.trainable_variables()
+            for vars in var_list:
+                try:
+                    saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+                    saver.restore(tf.get_default_session(), loadModel + '.ckpt')
+                    print("found " + vars.name)
+                except:
+                    print("couldn't find " + vars.name)
+            print('finished loading model')
+            # If you want to load weights, also save/load observation scaling inside VecNormalize
 
-        if not newModel:
-            saver = tf.train.Saver()
-            try:
-                saver.restore(tf.get_default_session(), self.last_test + '/model/model.ckpt')
-            except tf.errors.InvalidArgumentError:
-                print('couldn''t find a valid model at that location')
+        # if not newModel:
+        #     saver = tf.train.Saver()
+        #     try:
+        #         saver.restore(tf.get_default_session(), self.last_test + '/model/model.ckpt')
+        #     except tf.errors.InvalidArgumentError:
+        #         print('couldn''t find a valid model at that location')
 
         seg_gen = self.traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, render=render)
 
@@ -216,7 +236,7 @@ class RedbirdPposgd():
             seg = seg_gen.__next__()
 
             self.add_vtarg_and_adv(seg, gamma, lam)
-
+            seg["ob"] = seg["ob"][:,0,:] #ben
             ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
             vpredbefore = seg["vpred"]  # predicted value function before udpate
             atarg = (atarg - atarg.mean()) / atarg.std()  # standardized advantage function estimate
@@ -240,10 +260,23 @@ class RedbirdPposgd():
                     *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], lrnow, batch["vpredbefore"], cliprangenow)
                     adam.update(g, optim_stepsize * lrnow)
                     losses.append(newlosses)
-            if iters_so_far % 25 == 0:
-                os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
-                saver = tf.train.Saver()
-                saver.save(tf.get_default_session(), self.this_test + '/model/model.ckpt')
+            # if iters_so_far % 25 == 0:
+            #     os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
+            #     saver = tf.train.Saver()
+            #     saver.save(tf.get_default_session(), self.this_test + '/model/model.ckpt')
+            if save_interval and (iters_so_far % save_interval == 0 or iters_so_far == 1) and logger.get_dir():
+                checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                os.makedirs(checkdir, exist_ok=True)
+                savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
+                print('Saving to', savepath)
+                os.makedirs(os.path.dirname(savepath), exist_ok=True)
+                saver = tf.train.Saver(var_list=tf.trainable_variables())
+                var_list = tf.trainable_variables()
+                saver.save(tf.get_default_session(), savepath)
+                import pickle
+                data = env.ob_rms
+                with open(osp.join(checkdir, '%.5i.pik' % iters_so_far), 'wb') as f:
+                    pickle.dump([env.ob_rms, env.ret_rms], f, -1)
 
 
             losses = []

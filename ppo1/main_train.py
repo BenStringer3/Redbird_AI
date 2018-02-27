@@ -6,8 +6,12 @@ import redbird_policy
 from baselines.common import set_global_seeds
 import redbird_pposgd
 import os
+from baselines import logger
+from baselines.common.vec_env.vec_normalize import VecNormalize
+from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 
-def train(env_id, num_timesteps, seed, kind, logdir, render, newModel, earlyTermT_ms):
+
+def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms):
     import baselines.common.tf_util as U
     rank = MPI.COMM_WORLD.Get_rank() #the id of this process
     sess = U.single_threaded_session() #tensorflow session
@@ -33,13 +37,32 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel, earlyTerm
             last_test = None
         os.makedirs(this_test + '/rank_' + str(rank))
 
-    workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
-    set_global_seeds(workerseed)
-    env = gym.make(env_id)
+    # workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
+    # set_global_seeds(workerseed)
+    # env = gym.make(env_id)
+    # env = VecNormalize(env)
+
+    #begin mujoco style
+    def make_env():
+
+        from baselines import bench
+        env = gym.make(env_id)
+        env.seed(seed+ 10000*rank)
+        env.env.earlyTerminationTime_ms = earlyTermT_ms
+        env = bench.Monitor(env, logger.get_dir())
+        # env = Monitor(env, logger.get_dir())
+        return env
+
+    env = DummyVecEnv([make_env])
+    env.num_envs = 1
+    env = VecNormalize(env)
+    set_global_seeds(seed)
+    #end mujoco style
+
     def policy_fn(name, ob_space, ac_space): # pylint: disable=W0613
         return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
 
-    env.seed(workerseed)
+    # env.seed(workerseed)
 
     redbird = redbird_pposgd.RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
 
@@ -50,7 +73,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, newModel, earlyTerm
            optim_epochs=3, optim_stepsize=2.5e-4, optim_batchsize=32,
            gamma=0.99, lam=0.95,
            schedule='linear',
-           render=render, newModel=newModel, lr=lambda f : f * 2.5e-4
+           render=render, loadModel=loadModel, lr=lambda f : f * 2.5e-4
            )
     env.close()
 
@@ -72,11 +95,20 @@ def main():
     parser.add_argument('--kind', help='type of network (small, large, dense)', default='dense')
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
-    parser.add_argument('--newModel', help='Create new model or use most recently created', type=str2bool, default=True)
+    parser.add_argument('--model', help='Create new model or use most recently created',  default=None)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
+
+    # set up data logging directory!
+    if (not os.path.isdir(args.logdir)):
+        os.makedirs(args.logdir)
+    test_n = len(list(n for n in os.listdir(args.logdir) if n.startswith('test')))
+    this_test = args.logdir + "/test" + str(test_n + 1)
+    os.makedirs(this_test)
+    logger.configure(this_test, ['tensorboard'])
+
     print("beginning training")
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms)
 
 
 if __name__ == '__main__':
