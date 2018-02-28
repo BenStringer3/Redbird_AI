@@ -6,7 +6,7 @@ import redbird_pposgd
 import gym
 import os
 
-def demo(env_id, seed, kind, logdir, numRuns, test_n=None, earlyTermT_ms=None):
+def demo(env_id, seed, kind, logdir, numRuns, loadModel, earlyTermT_ms=None):
     sess = U.single_threaded_session() #tensorflow session
     sess.__enter__()
 
@@ -28,15 +28,17 @@ def demo(env_id, seed, kind, logdir, numRuns, test_n=None, earlyTermT_ms=None):
 
     U.initialize()
 
-    if test_n is None:
-        test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
-    var_list = oldpi.get_trainable_variables()
-    for vars in var_list:
-        try:
-            saver = tf.train.Saver({vars.name[:-2]: vars}) # the [:-2] is kinda jerry-rigged but ..
-            saver.restore(tf.get_default_session(), logdir + '/test' + str(test_n) + '/model/model.ckpt')
-        except:
-            print("couldn't find" + vars.name)
+    if loadModel is not None:
+        print('loading old model')
+        var_list = tf.trainable_variables()
+        for vars in var_list:
+            try:
+                saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+                saver.restore(tf.get_default_session(), loadModel + '.ckpt')
+                print("found " + vars.name)
+            except:
+                print("couldn't find " + vars.name)
+        print('finished loading model')
 
     for i in range(numRuns):
         ob = env.reset()
@@ -69,10 +71,10 @@ def main():
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--numRuns', help='number of times to run the sim', type=int, default=7)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
-    parser.add_argument('--test_n', help='which test to demo', type=int, default=None)
+    parser.add_argument('--model', help='model to load', default=None)
     args = parser.parse_args()
     print("beginning demo")
-    demo(env_id=args.env, seed=args.seed, kind=args.kind, logdir=args.logdir, numRuns=args.numRuns, test_n=args.test_n, earlyTermT_ms=args.earlyTermT_ms)
+    demo(env_id=args.env, seed=args.seed, kind=args.kind, logdir=args.logdir, numRuns=args.numRuns, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':
     main()
