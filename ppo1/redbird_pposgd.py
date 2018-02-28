@@ -129,7 +129,7 @@ class RedbirdPposgd():
             callback=None, # you can do anything in the callback, since it takes locals(), globals()
             adam_epsilon=1e-5,
             schedule='constant', # annealing for stepsize parameters (epsilon and adam),
-            render, loadModel, lr, cliprange=0.2, save_interval=200
+            render, loadModel, lr, cliprange=0.2, save_interval=200, log_interval=10
             ):
         if isinstance(lr, float): lr = self.constfn(lr)
         else: assert callable(lr)
@@ -218,6 +218,7 @@ class RedbirdPposgd():
         tstart = time.time()
 
         assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
+        tfirststart = time.time()
 
         while True:
             if callback: callback(locals(), globals())
@@ -296,16 +297,30 @@ class RedbirdPposgd():
             tnow = time.time()
             fps = float(1 / (tnow - tstart))
             if self.rank == 0:
-                ev = explained_variance(seg["vpred"], seg["tdlamret"])
-                summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
-                self.writer.add_summary(summary,  iters_so_far)
-                summary = tf.Summary(value=[tf.Summary.Value(tag="explained_variance", simple_value=ev)])
-                self.writer.add_summary(summary, iters_so_far)
-                for (lossval, name) in zipsame(meanlosses, loss_names):
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
-                    self.writer.add_summary(summary, iters_so_far)
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=lrnow)])
-                    self.writer.add_summary(summary, iters_so_far)
+                if iters_so_far % log_interval == 0 or iters_so_far == 1:
+                    ev = explained_variance(seg["vpred"], seg["tdlamret"])
+                    logger.logkv("serial_timesteps", iters_so_far * timesteps_per_actorbatch)
+                    logger.logkv("nupdates", iters_so_far)
+                    logger.logkv("total_timesteps", iters_so_far * timesteps_per_actorbatch)
+                    logger.logkv("fps", fps)
+                    logger.logkv("explained_variance", float(ev))
+                    logger.logkv("lr", float(lrnow))
+                    logger.logkv('eprewmean', safemean(seg['ep_rets']))
+                    logger.logkv('eplenmean', safemean(seg["ep_lens"]))
+                    logger.logkv('time_elapsed', tnow - tfirststart)
+                    for (lossval, lossname) in zip(meanlosses, loss_names):
+                        logger.logkv(lossname, lossval)
+                    logger.dumpkvs()
+                # ev = explained_variance(seg["vpred"], seg["tdlamret"])
+                # summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
+                # self.writer.add_summary(summary,  iters_so_far)
+                # summary = tf.Summary(value=[tf.Summary.Value(tag="explained_variance", simple_value=ev)])
+                # self.writer.add_summary(summary, iters_so_far)
+                # for (lossval, name) in zipsame(meanlosses, loss_names):
+                #     summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
+                #     self.writer.add_summary(summary, iters_so_far)
+                #     summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=lrnow)])
+                #     self.writer.add_summary(summary, iters_so_far)
 
             lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
@@ -316,3 +331,6 @@ class RedbirdPposgd():
 
     def flatten_lists(self, listoflists):
         return [el for list_ in listoflists for el in list_]
+
+def safemean(xs):
+    return np.nan if len(xs) == 0 else np.mean(xs)
