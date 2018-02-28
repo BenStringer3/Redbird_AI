@@ -194,6 +194,13 @@ class RedbirdPposgd():
                     print("found " + vars.name)
                 except:
                     print("couldn't find " + vars.name)
+            import pickle
+            try:
+                with open(loadModel + '.pik', 'rb') as f:
+                    env.ob_rms, env.ret_rms = pickle.load(f)
+                print('found observation scaling')
+            except:
+                print('could not find observation scaling')
             print('finished loading model')
             # If you want to load weights, also save/load observation scaling inside VecNormalize
 

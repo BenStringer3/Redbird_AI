@@ -25,14 +25,14 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False):
         import pickle
         try:
             with open(loadModel + '.pik', 'rb') as f:
-                env.ob_rms = pickle.load(f)
+                env.ob_rms, env.ret_rms = pickle.load(f)
             print('found observation scaling')
         except:
             print('could not find observation scaling')
 
     # runner = Runner(env=env, model=model, nsteps=nsteps, gamma=0.99, lam=0.95, demo=True)
 
-    for i in range(6):
+    for i in range(25):
         ob = env.reset()
         done = False
         states= None
