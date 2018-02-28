@@ -234,7 +234,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         import pickle
         try:
             with open(loadModel + '.pik', 'rb') as f:
-                env.ob_rms = pickle.load(f)
+                env.ob_rms, env.ret_rms = pickle.load(f)
             print('found observation scaling')
         except:
             print('could not find observation scaling')
@@ -306,7 +306,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             import pickle
             data = env.ob_rms
             with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
-                pickle.dump(env.ob_rms, f, -1)
+                pickle.dump([env.ob_rms, env.ret_rms], f, -1)
     env.close()
 
 def safemean(xs):
