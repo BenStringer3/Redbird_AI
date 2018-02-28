@@ -251,7 +251,9 @@ class MlpPolicy3(object):
         from gym import spaces
         # nh, nw, nc = ob_space.shape
         # ob_shape = (nbatch, nh, nw, nc)
-        ob_shape = (nbatch, ob_space.shape[0])
+
+        # ob_shape = (nbatch, ob_space.shape[0])
+        ob_shape = nbatch + list(ob_space.shape)
         if isinstance(ac_space, spaces.Dict):
             nact = 0
             for key, space in ac_space.spaces.items():
@@ -259,7 +261,8 @@ class MlpPolicy3(object):
         else:
             nact = np.sum(ac_space.nvec)
 
-        X = tf.placeholder(tf.float32, ob_shape, "X") #obs
+        # X = tf.placeholder(tf.float32, ob_shape, "X") #obs
+        X = U.get_placeholder("X", tf.float32, ob_shape)
 
         def plain_dense(x, size, name, weight_init=None, bias=True):
             w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)

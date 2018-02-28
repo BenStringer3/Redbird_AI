@@ -2,9 +2,9 @@
 from mpi4py import MPI #parallelization stuff
 from datetime import datetime #for seeding random number generator
 import gym
-import redbird_policy
+# import redbird_policy
 from baselines.common import set_global_seeds
-import redbird_pposgd
+# import redbird_pposgd
 import os
 from baselines import logger
 from baselines.common.vec_env.vec_normalize import VecNormalize
@@ -59,12 +59,15 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     set_global_seeds(seed)
     #end mujoco style
 
-    def policy_fn(name, ob_space, ac_space): # pylint: disable=W0613
-        return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
+    def policy_fn(name, ob_space, ac_space, reuse): # pylint: disable=W0613
+        from Redbird_AI.ppo2.policies import MlpPolicy3
+        import tensorflow as tf
+        return MlpPolicy3(tf.get_default_session(), ob_space, ac_space, [None], 1, reuse)
+        # return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
 
     # env.seed(workerseed)
-
-    redbird = redbird_pposgd.RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
+    from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
+    redbird = RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
 
     redbird.learn(env, policy_fn,
            max_timesteps=int(num_timesteps * 1.1),

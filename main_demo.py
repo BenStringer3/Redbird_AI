@@ -1,6 +1,6 @@
 import baselines.common.tf_util as U
 import tensorflow as tf
-import redbird_policy
+# import redbird_policy
 from baselines.common import set_global_seeds
 import redbird_pposgd
 import gym

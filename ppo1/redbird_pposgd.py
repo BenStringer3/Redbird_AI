@@ -44,10 +44,12 @@ class RedbirdPposgd():
         news = np.zeros(horizon, 'int32')
         acs = np.array([ac for _ in range(horizon)])
         prevacs = acs.copy()
-
+        self.states = pi.initial_state
+        self.done = False
         while True:
             prevac = ac
-            ac, vpred = pi.act(stochastic, ob)
+            # ac, vpred = pi.act(stochastic, ob)
+            ac, vpred, self.states, _ = pi.step(ob, self.states, self.done)
 
             #tensorboard logging
 
@@ -136,8 +138,8 @@ class RedbirdPposgd():
 
         ob_space = env.observation_space
         ac_space = env.action_space
-        pi = policy_func("pi", ob_space, ac_space)  # Construct network for new policy
-        oldpi = policy_func("oldpi", ob_space, ac_space)  # Network for old policy
+        pi = policy_func("pi", ob_space, ac_space, False)  # Construct network for new policy
+        oldpi = policy_func("oldpi", ob_space, ac_space, True)  # Network for old policy
         atarg = tf.placeholder(dtype=tf.float32, shape=[None],
                                name="atarg")  # Target advantage function (if applicable)
         ret = tf.placeholder(dtype=tf.float32, shape=[None], name="ret")  # Empirical return TODO: what is this? -ben
@@ -145,7 +147,7 @@ class RedbirdPposgd():
         lrmult = tf.placeholder(name='lrmult', dtype=tf.float32, shape=[]) # learning rate multiplier, updated with schedule
         clip_param = clip_param * lrmult # Annealed cliping parameter epislon
 
-        ob = U.get_placeholder_cached(name="ob")
+        ob = U.get_placeholder_cached(name="X")
         ac = pi.pdtype.sample_placeholder([None])
 
         OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
@@ -162,20 +164,24 @@ class RedbirdPposgd():
         surr2 = tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE) * atarg
         pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2))  # PPO's pessimistic surrogate (L^CLIP)
         # vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
-        vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
-        vf_losses1 = tf.square(pi.vpred- ret)
+        # vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        vpredclipped = OLDVPRED + tf.clip_by_value(pi.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        # vf_losses1 = tf.square(pi.vpred- ret)
+        vf_losses1 = tf.square(pi.vf - ret)
         vf_losses2 = tf.square(vpredclipped - ret)
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
         total_loss = pol_surr + pol_entpen + vf_loss * vf_coef
         losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent, total_loss]
         loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent", "total"]
 
-        var_list = pi.get_trainable_variables()
+        # var_list = pi.get_trainable_variables()
+        var_list = tf.trainable_variables(scope="model")
         lossandgrad = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses + [U.flatgrad(total_loss, var_list)])
         adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
-        assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
-            for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
+        # assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
+        #     # for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
+        #     for (oldv, newv) in zipsame()
         compute_losses = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses)
 
         U.initialize()
@@ -250,7 +256,7 @@ class RedbirdPposgd():
 
             if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob)  # update running mean/std for policy
 
-            assign_old_eq_new()  # set old parameter values to new parameter values
+            # assign_old_eq_new()  # set old parameter values to new parameter values
 
             # Here we do a bunch of optimization epochs over the data
             for _ in range(optim_epochs):
