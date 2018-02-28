@@ -42,28 +42,31 @@ class Model(object):
         vf_loss = vf_loss_ * vf_coef
         general_loss = pi_loss + vf_loss
 
-        general_params = tf.trainable_variables("general_layers")
-        pi_params = tf.trainable_variables("pi_layers")
-        vf_params = tf.trainable_variables("vf_layers")
+        # general_params = tf.trainable_variables("general_layers")
+        # pi_params = tf.trainable_variables("pi_layers")
+        # vf_params = tf.trainable_variables("vf_layers")
+        params = tf.trainable_variables("model")
 
-        general_grads = tf.gradients(general_loss, general_params)
-        pi_grads = tf.gradients(pi_loss, pi_params)
-        vf_grads = tf.gradients(vf_loss, vf_params)
-
-        if max_grad_norm is not None:
-            general_grads, _grad_norm = tf.clip_by_global_norm(general_grads, max_grad_norm)
-        general_grads = list(zip(general_grads, general_params))
+        # general_grads = tf.gradients(general_loss, general_params)
+        # pi_grads = tf.gradients(pi_loss, pi_params)
+        # vf_grads = tf.gradients(vf_loss, vf_params)
+        grads = tf.gradients(general_loss, params)
 
         if max_grad_norm is not None:
-            pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
-        pi_grads = list(zip(pi_grads, pi_params))
+            general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
+        grads = list(zip(general_grads, params))
 
-        if max_grad_norm is not None:
-            vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
-        vf_grads = list(zip(vf_grads, vf_params))
+        # if max_grad_norm is not None:
+        #     pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
+        # pi_grads = list(zip(pi_grads, pi_params))
+        #
+        # if max_grad_norm is not None:
+        #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
+        # vf_grads = list(zip(vf_grads, vf_params))
 
         trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
-        _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
+        # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
+        _train = trainer.apply_gradients(grads)
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
