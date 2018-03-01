@@ -34,7 +34,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     ret= SubprocVecEnv(envs)
     return ret
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, initial_lr=2.5e-4):
     from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -65,7 +65,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     envs = [make_env(i) for i in range(nenv)]
     env = SubprocVecEnv(envs)
-    env = VecNormalize(env)
+    env = VecNormalize(env, ret=False)
 
     policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
 
@@ -73,8 +73,8 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
-        ent_coef=.01,
-        lr=lambda f : f * 2.5e-4,
+        ent_coef=.001,
+        lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
         save_interval=500, loadModel=loadModel)
@@ -99,8 +99,11 @@ def main():
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--model', help='Model path', default=None)
+    parser.add_argument('--initial_lr', help='Initial learning rate', type = float, default=int(2.5e-4))
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
+
+
 
     # set up data logging directory!
     if (not os.path.isdir(args.logdir)):
@@ -110,8 +113,11 @@ def main():
     os.makedirs(this_test)
     logger.configure(this_test, ['tensorboard'])
 
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv) #, logdir=args.logdir, render=args.render,
+    import time
+    seed = int(time.time())
+
+    train(args.env, num_timesteps=args.num_timesteps, seed=seed,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv, initial_lr=args.initial_lr) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':

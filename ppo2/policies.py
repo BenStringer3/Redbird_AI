@@ -273,6 +273,9 @@ class MlpPolicy3(object):
         with tf.variable_scope("model", reuse=reuse):
             ob = X
             l1 = tf.layers.dense(inputs=ob, units=512 * 2, activation=tf.nn.tanh, name="l1")
+            if reuse:
+                tf.summary.histogram(l1.name, tf.get_default_graph().get_tensor_by_name(l1.name))
+
             l2 = tf.layers.dense(inputs=l1, units=512 * 2, activation=tf.nn.tanh, name="l2")
 
         # with tf.variable_scope("pi_layers", reuse=reuse):
@@ -282,7 +285,8 @@ class MlpPolicy3(object):
             pi = tf.layers.dense(l4, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
             # logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
             # pi = plain_dense(l5, nact, "logits", U.normc_initializer(0.01))
-
+            if reuse:
+                tf.summary.histogram(pi.name, tf.get_default_graph().get_tensor_by_name(pi.name))
         # with tf.variable_scope("vf_layers", reuse=reuse):
             # vpred branch
             l3_v = tf.layers.dense(l2, 512, tf.nn.tanh, name="l3_v")

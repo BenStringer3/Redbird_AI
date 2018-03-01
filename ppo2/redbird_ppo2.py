@@ -12,7 +12,7 @@ class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
                 nsteps, ent_coef, vf_coef, max_grad_norm):
         sess = tf.get_default_session()
-
+        self.writer = tf.summary.FileWriter(logger.get_dir())
         act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
         train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
 
@@ -23,6 +23,7 @@ class Model(object):
         OLDVPRED = tf.placeholder(tf.float32, [None])
         LR = tf.placeholder(tf.float32, [])
         CLIPRANGE = tf.placeholder(tf.float32, [])
+        PI_COEFF = tf.placeholder(tf.float32, [])
 
         neglogpac = train_model.pd.neglogp(A)
         entropy = tf.reduce_mean(train_model.pd.entropy())
@@ -40,7 +41,7 @@ class Model(object):
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
         pi_loss = pg_loss - entropy * ent_coef
         vf_loss = vf_loss_ * vf_coef
-        general_loss = pi_loss + vf_loss
+        general_loss = PI_COEFF*pi_loss + vf_loss
 
         # general_params = tf.trainable_variables("general_layers")
         # pi_params = tf.trainable_variables("pi_layers")
@@ -64,30 +65,36 @@ class Model(object):
         #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
         # vf_grads = list(zip(vf_grads, vf_params))
 
-        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
+        self.trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
         # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
-        _train = trainer.apply_gradients(grads)
+        _train = self.trainer.apply_gradients(grads)
 
-        def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
+        summaries = tf.summary.merge_all()
+
+        def train(lr, pi_coeff, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
             td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
-                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values}
+                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values, PI_COEFF:pi_coeff}
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
-            return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],
+            stuff =  sess.run(
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss,summaries, _train],
                 td_map
             )[:-1]
+            for fmt in logger.Logger.CURRENT.output_formats:
+                if isinstance(fmt, logger.KVWriter):
+                    self.writer.add_summary(stuff[-1], global_step=fmt.step)
+
+            return stuff[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
 
             # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            saver = tf.train.Saver(var_list=tf.trainable_variables())
-            var_list = tf.trainable_variables()
+            saver = tf.train.Saver(var_list=tf.global_variables())
             saver.save(tf.get_default_session(), save_path)
             # ps = sess.run(general_params + vf_params + pi_params)
             # joblib.dump(ps, save_path)
@@ -96,7 +103,7 @@ class Model(object):
         def load(load_path):
             print('loading old model')
             # from tensorflow.contrib.framework.python.framework.checkpoint_utils import  list_variables
-            var_list = tf.trainable_variables()
+            var_list = tf.global_variables() # trainable_variables()
             for vars in var_list:
                 try:
                     saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
@@ -248,6 +255,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     tfirststart = time.time()
 
     nupdates = total_timesteps//nbatch
+    pi_coeff = 0.
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
         nbatch_train = nbatch // nminibatches
@@ -266,7 +274,9 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     end = start + nbatch_train
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mblossvals.append(model.train(lrnow, cliprangenow, *slices))
+                    if update > 0:
+                        pi_coeff = 1.
+                    mblossvals.append(model.train(lrnow, pi_coeff,  cliprangenow, *slices))
         else: # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches
@@ -297,6 +307,10 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
+            # logger.logkv("ob_mean", env.ob_rms.mean)
+            # logger.logkv("ob_var", env.ob_rms.var)
+            # logger.logkv("rew_mean", env.ret_rms.mean)
+            # logger.logkv("rew_var", env.ret_rms.var)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv(lossname, lossval)
             logger.dumpkvs()
@@ -307,7 +321,6 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             print('Saving to', savepath)
             model.save(savepath)
             import pickle
-            data = env.ob_rms
             with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
                 pickle.dump([env.ob_rms, env.ret_rms], f, -1)
     env.close()
