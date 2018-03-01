@@ -192,7 +192,7 @@ class RedbirdPposgd():
         #         fh.write(cloudpickle.dumps(make_model))
         if loadModel is not None:
             print('loading old model')
-            var_list = tf.trainable_variables()
+            var_list = tf.global_variables()
             for vars in var_list:
                 try:
                     saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
@@ -277,8 +277,7 @@ class RedbirdPposgd():
                 savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
                 print('Saving to', savepath)
                 os.makedirs(os.path.dirname(savepath), exist_ok=True)
-                saver = tf.train.Saver(var_list=tf.trainable_variables())
-                var_list = tf.trainable_variables()
+                saver = tf.train.Saver(var_list=tf.global_variables())
                 saver.save(tf.get_default_session(), savepath)
                 import pickle
                 data = env.ob_rms
