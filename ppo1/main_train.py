@@ -11,7 +11,7 @@ from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 
 
-def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms):
+def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
     rank = MPI.COMM_WORLD.Get_rank() #the id of this process
     sess = U.single_threaded_session() #tensorflow session
@@ -72,8 +72,8 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     redbird.learn(env, policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
            timesteps_per_actorbatch=128,  # 256,
-           clip_param=0.2, entcoeff=0.01, vf_coef=0.5,
-           optim_epochs=3, optim_stepsize=2.5e-4, optim_batchsize=32,
+           clip_param=0.2, entcoeff=0.001, vf_coef=0.5,
+           optim_epochs=3, optim_stepsize=initial_lr, optim_batchsize=32,
            gamma=0.99, lam=0.95,
            schedule='linear',
            render=render, loadModel=loadModel, lr=lambda f : f * 2.5e-4
@@ -100,6 +100,8 @@ def main():
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     parser.add_argument('--model', help='Create new model or use most recently created',  default=None)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
+    parser.add_argument('--initial_lr', help='Initial learning rate', type = int, default=int(2.5e-4))
+
     args = parser.parse_args()
 
     # set up data logging directory!
@@ -111,7 +113,7 @@ def main():
     logger.configure(this_test, ['tensorboard'])
 
     print("beginning training")
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms)
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms, initial_lr=args.initial_lr)
 
 
 if __name__ == '__main__':
