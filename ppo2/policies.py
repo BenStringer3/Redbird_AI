@@ -3,6 +3,8 @@ import tensorflow as tf
 from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lstm, lnlstm
 from baselines.common.distributions import make_pdtype
 from baselines.common import tf_util as U
+from gym import spaces
+
 
 def nature_cnn(unscaled_images):
     """
@@ -248,7 +250,6 @@ class MlpPolicy2(object):
 class MlpPolicy3(object):
 
     def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
-        from gym import spaces
         # nh, nw, nc = ob_space.shape
         # ob_shape = (nbatch, nh, nw, nc)
 
@@ -264,18 +265,21 @@ class MlpPolicy3(object):
         # X = tf.placeholder(tf.float32, ob_shape, "X") #obs
         X = U.get_placeholder("X", tf.float32, ob_shape)
 
-        def plain_dense(x, size, name, weight_init=None, bias=True):
-            w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
-            ret = tf.matmul(x, w)
-            if bias:
-                b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
-                return ret + b
-            else:
-                return ret
+        pi, vf, step, value = self.buildModel(X, sess, nact, reuse, ac_space)
 
+
+        self.X = X
+        self.pi = pi
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+    def buildModel(self, X, sess, nact, reuse, ac_space):
         with tf.variable_scope("model", reuse=reuse):
             ob = X
             l1 = tf.layers.dense(inputs=ob, units=512 * 2, activation=tf.nn.tanh, name="l1")
+            tf.summary.histogram(l1.name, l1)
+
             l2 = tf.layers.dense(inputs=l1, units=512 * 2, activation=tf.nn.tanh, name="l2")
 
         # with tf.variable_scope("pi_layers", reuse=reuse):
@@ -328,9 +332,4 @@ class MlpPolicy3(object):
 
             def value(ob, *_args, **_kwargs):
                 return sess.run(vf, {X:ob})
-
-        self.X = X
-        self.pi = pi
-        self.vf = vf
-        self.step = step
-        self.value = value
+        return pi, vf, step, value

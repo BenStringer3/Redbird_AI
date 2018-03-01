@@ -13,8 +13,8 @@ class Model(object):
                 nsteps, ent_coef, vf_coef, max_grad_norm):
         sess = tf.get_default_session()
 
-        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
+        act_model = policy(sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+        train_model = policy(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
         A = train_model.pdtype.sample_placeholder([None])
         ADV = tf.placeholder(tf.float32, [None])
@@ -68,6 +68,8 @@ class Model(object):
         # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
         _train = trainer.apply_gradients(grads)
 
+        summaries = tf.summary.merge_all()
+
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
@@ -76,10 +78,12 @@ class Model(object):
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
-            return sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],
+            stuff =  sess.run(
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train, summaries],
                 td_map
             )[:-1]
+            logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
+            return stuff[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
