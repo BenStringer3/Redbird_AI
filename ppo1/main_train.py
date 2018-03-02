@@ -19,12 +19,13 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
 
     #set up data logging directory!
     if rank == 0: #if this is the first process
+        # set up data logging directory!
         if (not os.path.isdir(logdir)):
             os.makedirs(logdir)
         test_n = len(list(n for n in os.listdir(logdir) if n.startswith('test')))
         this_test = logdir + "/test" + str(test_n + 1)
-        last_test =  logdir + "/test" + str(test_n)
         os.makedirs(this_test)
+
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
         os.makedirs(this_test + '/rank_' + str(rank))
@@ -36,6 +37,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         else:
             last_test = None
         os.makedirs(this_test + '/rank_' + str(rank))
+    logger.configure(this_test + '/rank_' + str(rank), ['tensorboard'])
 
     # workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
     # set_global_seeds(workerseed)
@@ -104,13 +106,6 @@ def main():
 
     args = parser.parse_args()
 
-    # set up data logging directory!
-    if (not os.path.isdir(args.logdir)):
-        os.makedirs(args.logdir)
-    test_n = len(list(n for n in os.listdir(args.logdir) if n.startswith('test')))
-    this_test = args.logdir + "/test" + str(test_n + 1)
-    os.makedirs(this_test)
-    logger.configure(this_test, ['tensorboard'])
 
     print("beginning training")
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.kind, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms, initial_lr=args.initial_lr)
