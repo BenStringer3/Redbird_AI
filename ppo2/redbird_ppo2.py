@@ -26,7 +26,7 @@ class Model(object):
         PI_COEFF = tf.placeholder(tf.float32, [])
 
         neglogpac = train_model.pd.neglogp(A)
-        entropy = tf.reduce_mean(train_model.pd.entropy())
+        entropy = tf.reduce_mean(train_model.pd.entropy(),name="entropy")
 
         vpred = train_model.vf
         vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
