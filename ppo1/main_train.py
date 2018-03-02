@@ -100,7 +100,7 @@ def main():
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
     parser.add_argument('--model', help='Create new model or use most recently created',  default=None)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
-    parser.add_argument('--initial_lr', help='Initial learning rate', type = int, default=int(2.5e-4))
+    parser.add_argument('--initial_lr', help='Initial learning rate', type = float, default=float(2.5e-4))
 
     args = parser.parse_args()
 
