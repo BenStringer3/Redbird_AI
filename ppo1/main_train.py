@@ -9,7 +9,7 @@ import os
 from baselines import logger
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-
+from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
@@ -29,6 +29,8 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         for i in range(1, MPI.COMM_WORLD.Get_size()): # tell the other processes which test directory we're in
             MPI.COMM_WORLD.send(test_n+1, dest=i, tag=11)
         os.makedirs(this_test + '/rank_' + str(rank))
+        logger.configure(this_test + '/rank_' + str(rank), ['tensorboard'])
+
     else:
         test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
         this_test = logdir + "/test" + str(test_n)
@@ -37,7 +39,6 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         else:
             last_test = None
         os.makedirs(this_test + '/rank_' + str(rank))
-    logger.configure(this_test + '/rank_' + str(rank), ['tensorboard'])
 
     # workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
     # set_global_seeds(workerseed)
@@ -68,7 +69,6 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         # return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
 
     # env.seed(workerseed)
-    from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
     redbird = RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
 
     redbird.learn(env, policy_fn,
