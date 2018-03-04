@@ -63,13 +63,13 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     #end mujoco style
 
     def policy_fn(name, ob_space, ac_space, reuse): # pylint: disable=W0613
-        from Redbird_AI.ppo2.policies import MlpPolicy3
+        from Redbird_AI.policies import MlpPolicy3
         import tensorflow as tf
         return MlpPolicy3(tf.get_default_session(), ob_space, ac_space, [None], 1, reuse)
         # return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
 
     # env.seed(workerseed)
-    redbird = RedbirdPposgd(rank, this_test, last_test, earlyTermT_ms=earlyTermT_ms)
+    redbird = RedbirdPposgd(rank, this_test, None, earlyTermT_ms=earlyTermT_ms)
 
     redbird.learn(env, policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
