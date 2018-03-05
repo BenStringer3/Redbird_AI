@@ -34,14 +34,14 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         os.makedirs(this_test + '/rank_' + str(rank))
         logger.configure(this_test + '/rank_' + str(rank), ['tensorboard'])
 
-    else:
-        test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
-        this_test = logdir + "/test" + str(test_n)
-        if test_n > 0:
-            last_test = logdir + "/test" + str(test_n - 1)
-        else:
-            last_test = None
-        os.makedirs(this_test + '/rank_' + str(rank))
+    # else:
+    #     test_n = MPI.COMM_WORLD.recv(source=0, tag=11) #receive test_n from rank 0 process
+    #     this_test = logdir + "/test" + str(test_n)
+    #     if test_n > 0:
+    #         last_test = logdir + "/test" + str(test_n - 1)
+    #     else:
+    #         last_test = None
+    #     os.makedirs(this_test + '/rank_' + str(rank))
 
     # workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank()
     # set_global_seeds(workerseed)
