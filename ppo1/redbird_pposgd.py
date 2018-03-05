@@ -95,7 +95,7 @@ class RedbirdPposgd():
                 ep_lens.append(cur_ep_len)
                 cur_ep_ret = 0
                 cur_ep_len = 0
-                ob = env.reset()
+                # ob = env.reset()
             t += 1
     def add_vtarg_and_adv(self, seg, gamma, lam):
         """
