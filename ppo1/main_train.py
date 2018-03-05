@@ -10,7 +10,8 @@ from baselines import logger
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 import sys
-sys.path.append('/scratch/home/bcstri01/env2/Redbird_AI')
+sys.path.append('/home/bcstri01/env2/Redbird_AI')
+sys.path.append('/home/bcstri01/env2')
 from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, initial_lr=2.5e-4):
