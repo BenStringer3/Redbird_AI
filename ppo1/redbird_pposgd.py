@@ -175,7 +175,7 @@ class RedbirdPposgd():
         loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent", "total"]
 
         # var_list = pi.get_trainable_variables()
-        var_list = tf.trainable_variables(scope="model")
+        var_list = tf.trainable_variables()#("model")
         lossandgrad = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses + [U.flatgrad(total_loss, var_list)])
         adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
