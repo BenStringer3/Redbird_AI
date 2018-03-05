@@ -87,8 +87,8 @@ class RedbirdPposgd():
 
             if new:
                 ep_num += 1
-                summary = tf.Summary(value=[tf.Summary.Value(tag="rew", simple_value=cur_ep_ret)])
-                self.writer.add_summary(summary, ep_num)
+                # summary = tf.Summary(value=[tf.Summary.Value(tag="rew", simple_value=cur_ep_ret)])
+                # self.writer.add_summary(summary, ep_num)
                 # self.writer.flush() #ben
 
                 ep_rets.append(cur_ep_ret)
