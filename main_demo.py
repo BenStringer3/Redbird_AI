@@ -2,9 +2,9 @@ import baselines.common.tf_util as U
 import tensorflow as tf
 # import redbird_policy
 from baselines.common import set_global_seeds
-import redbird_pposgd
+from Redbird_AI.common.policies import MlpPolicy3
 import gym
-import os
+import numpy as np
 
 def demo(env_id, seed, kind, logdir, numRuns, loadModel, earlyTermT_ms=None):
     sess = U.single_threaded_session() #tensorflow session
@@ -12,16 +12,25 @@ def demo(env_id, seed, kind, logdir, numRuns, loadModel, earlyTermT_ms=None):
 
     set_global_seeds(seed)
     env = gym.make(env_id)
-    def policy_fn(name, ob_space, ac_space): # pylint: disable=W0613
-        return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
+    # def policy_fn(name, ob_space, ac_space): # pylint: disable=W0613
+    #     return redbird_policy.RedbirdPolicy(name=name, ob_space=ob_space, ac_space=ac_space, kind=kind)
 
     env.seed(seed)
+    if earlyTermT_ms is not None:
+        env.env.earlyTerminationTime_ms = earlyTermT_ms
 
     done = False
     stochastic = False
     ob_space = env.observation_space
     ac_space = env.action_space
-    oldpi = policy_fn("oldpi", ob_space, ac_space)  # Construct network for new policy
+    ob_shape = [None] + list(ob_space.shape)
+    ob = U.get_placeholder("X", tf.float32, ob_shape)
+    try:
+        nact = np.sum(ac_space.nvec)
+    except:
+        nact = ac_space.shape[0] * 2
+    model = MlpPolicy3(ob, tf.get_default_session(), nact, ac_space, reuse=False)
+    # oldpi = policy_fn("oldpi", ob_space, ac_space)  # Construct network for new policy
 
     # ob = U.get_placeholder_cached(name="ob")
     # ac = pi.pdtype.sample_placeholder([None])
@@ -40,16 +49,27 @@ def demo(env_id, seed, kind, logdir, numRuns, loadModel, earlyTermT_ms=None):
                 print("couldn't find " + vars.name)
         print('finished loading model')
 
+    # for i in range(numRuns):
+    #     ob = env.reset()
+    #     done = False
+    #     while not done:
+    #         ac, vpred = oldpi.act(stochastic, ob)
+    #         ob, rew, done, info = env.step(ac)
+    #         env.render()
+    #
+    #         if earlyTermT_ms is not None and info["time_ms"] >= earlyTermT_ms:
+    #             done = True
+    #
+    # env.close()
     for i in range(numRuns):
         ob = env.reset()
         done = False
+        states= None
         while not done:
-            ac, vpred = oldpi.act(stochastic, ob)
-            ob, rew, done, info = env.step(ac)
+            ob = np.expand_dims(ob, 0)
+            actions, values, states, neglogpacs = model.step(ob, states, done)
+            ob, rew, done, info = env.step(actions)
             env.render()
-
-            if earlyTermT_ms is not None and info["time_ms"] >= earlyTermT_ms:
-                done = True
 
     env.close()
 

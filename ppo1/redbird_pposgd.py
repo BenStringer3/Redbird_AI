@@ -13,7 +13,7 @@ import os.path as osp
 import joblib
 
 
-REWARD_SCALE = 10 # get rid of later
+
 
 class RedbirdPposgd():
     def __init__(self, rank, this_test, last_test, earlyTermT_ms=None):
@@ -21,8 +21,8 @@ class RedbirdPposgd():
         self.earlyTermT_ms = earlyTermT_ms
         self.this_test = this_test
         self.last_test = last_test
-        sess = tf.get_default_session()
-        self.writer = tf.summary.FileWriter(self.this_test + '/rank_' + str(self.rank), sess.graph)
+        # sess = tf.get_default_session()
+        # self.writer = tf.summary.FileWriter(self.this_test + '/rank_' + str(self.rank), sess.graph)
 
     def traj_segment_generator(self, pi, env, horizon, stochastic, render=False):
         t = 0
@@ -120,7 +120,7 @@ class RedbirdPposgd():
 
         return f
 
-    def learn(self, env, policy_func, *,
+    def learn(self, env, policy, *,
             timesteps_per_actorbatch, # timesteps per actor per update
             clip_param, entcoeff, vf_coef, # clipping parameter epsilon, entropy coeff
             optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
@@ -138,8 +138,8 @@ class RedbirdPposgd():
 
         ob_space = env.observation_space
         ac_space = env.action_space
-        pi = policy_func("pi", ob_space, ac_space, False)  # Construct network for new policy
-        oldpi = policy_func("oldpi", ob_space, ac_space, True)  # Network for old policy
+        # pi = policy_func("pi", ob_space, ac_space, False)  # Construct network for new policy
+        # oldpi = policy_func("oldpi", ob_space, ac_space, True)  # Network for old policy
         atarg = tf.placeholder(dtype=tf.float32, shape=[None],
                                name="atarg")  # Target advantage function (if applicable)
         ret = tf.placeholder(dtype=tf.float32, shape=[None], name="ret")  # Empirical return TODO: what is this? -ben
@@ -147,7 +147,15 @@ class RedbirdPposgd():
         lrmult = tf.placeholder(name='lrmult', dtype=tf.float32, shape=[]) # learning rate multiplier, updated with schedule
         clip_param = clip_param * lrmult # Annealed cliping parameter epislon
 
-        ob = U.get_placeholder_cached(name="X")
+        # ob = U.get_placeholder_cached(name="X")
+        ob_shape = [None] + list(ob_space.shape)
+        ob = U.get_placeholder("X", tf.float32, ob_shape)
+        try:
+            nact = np.sum(ac_space.nvec)
+        except:
+            nact = ac_space.shape[0]*2
+        pi = policy(ob, tf.get_default_session(), nact,  ac_space, reuse=False)
+        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, reuse=True)
         ac = pi.pdtype.sample_placeholder([None])
 
         OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
@@ -304,8 +312,9 @@ class RedbirdPposgd():
                     logger.logkv("fps", fps)
                     logger.logkv("explained_variance", float(ev))
                     logger.logkv("lr", float(lrnow))
-                    logger.logkv('eprewmean', safemean(seg['ep_rets']))
-                    logger.logkv('eplenmean', safemean(seg["ep_lens"]))
+                    if len(seg['ep_rets']) > 0:
+                        logger.logkv('eprewmean', safemean(seg['ep_rets']))
+                        logger.logkv('eplenmean', safemean(seg["ep_lens"]))
                     logger.logkv('time_elapsed', tnow - tfirststart)
                     for (lossval, lossname) in zip(meanlosses, loss_names):
                         logger.logkv(lossname, lossval)

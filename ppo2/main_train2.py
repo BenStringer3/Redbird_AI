@@ -3,13 +3,14 @@ import sys
 from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
-from redbird_ppo2 import learn
-from policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
+from Redbird_AI.ppo2.redbird_ppo2 import learn
+from Redbird_AI.ppo2.policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
 import multiprocessing
 import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
 from baselines.bench import Monitor
+from Redbird_AI.common.cmd_util import iarc_arg_parser
 import os
 
 def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs=None, start_index=0):
@@ -89,18 +90,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def main():
-    import argparse
-    import os
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'mlp'], default='mlp')
-    parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
+    parser = iarc_arg_parser()
     parser.add_argument('--nenv', help='Number of environments to run',type = int, default=int(5))
-    parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=int(10e7))
-    parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
-    parser.add_argument('--model', help='Model path', default=None)
-    parser.add_argument('--initial_lr', help='Initial learning rate', type = int, default=int(2.5e-4))
-    parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
 
 
