@@ -62,7 +62,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
 
     env = DummyVecEnv([make_env])
     env.num_envs = 1
-    env = VecNormalize(env)
+    env = VecNormalize(env,ret=True)
     set_global_seeds(seed)
     #end mujoco style
 

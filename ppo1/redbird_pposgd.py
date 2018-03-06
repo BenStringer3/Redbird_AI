@@ -51,7 +51,11 @@ class RedbirdPposgd():
             # ac, vpred = pi.act(stochastic, ob)
             ac, vpred, self.states, _ = pi.step(ob, self.states, self.done)
 
-            #tensorboard logging
+            # if self.rank == 0:
+            #     #tensorboard logging
+            #     logger.logkv("aav_posx", ac[0][0])
+            #     logger.logkv("aav_posy", ac[0][1])
+
 
             if t > 0 and t % horizon == 0:
                 yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
@@ -70,9 +74,7 @@ class RedbirdPposgd():
 
             ac = np.expand_dims(ac, 0)
             ob, rew, new, info = env.step(ac)
-            # ob = ob [0,:] #ben
-            # if self.earlyTermT_ms is not None and info["time_ms"] >= self.earlyTermT_ms:
-            #     new = True
+
 
             # rew = rew * REWARD_SCALE  # ben
             rews[i] = rew
@@ -82,14 +84,13 @@ class RedbirdPposgd():
             if render and self.rank == 0:
                 env.render()
 
-            #more tensorboard logging stuff
-            #here
-
             if new:
                 ep_num += 1
-                # summary = tf.Summary(value=[tf.Summary.Value(tag="rew", simple_value=cur_ep_ret)])
-                # self.writer.add_summary(summary, ep_num)
-                # self.writer.flush() #ben
+                if self.rank == 0:
+                    for rew_name, rew in info[0]["rews"].items():
+                        logger.logkv(rew_name, rew)
+                    logger.logkv("rew", cur_ep_ret)
+                    logger.dumpkvs()
 
                 ep_rets.append(cur_ep_ret)
                 ep_lens.append(cur_ep_len)
