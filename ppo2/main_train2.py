@@ -4,7 +4,7 @@ from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from Redbird_AI.ppo2.redbird_ppo2 import learn
-from Redbird_AI.ppo2.policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
+from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4
 import multiprocessing
 import tensorflow as tf
 import gym
@@ -68,7 +68,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     env = SubprocVecEnv(envs)
     env = VecNormalize(env)
 
-    policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
+    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3}[policy]
 
     # env = VecFrameStack(make_IARC_env(env_id, 8, seed, earlyTerminationTime_ms), 4)
 

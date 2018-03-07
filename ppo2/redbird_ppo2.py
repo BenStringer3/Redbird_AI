@@ -17,9 +17,10 @@ class Model(object):
 
         ob_shape = (nbatch_act, ob_space.shape[0])
         nact = np.sum(ac_space.nvec)
-        X = tf.placeholder(float, ob_shape, "X")
+        X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
         act_model = policy( X, sess, nact, ac_space, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+        X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
         train_model = policy( X, sess, nact, ac_space, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
         A = train_model.pdtype.sample_placeholder([None])
@@ -85,11 +86,11 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             stuff =  sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train, summaries],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],#, summaries],
                 td_map
             )[:-1]
-            logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
-            return stuff[:-1]
+            # logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
+            return stuff #[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):

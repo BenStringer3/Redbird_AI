@@ -19,7 +19,7 @@ class MlpPolicy3(object):
             # logits branch
             l3 = tf.layers.dense(l2, 512, tf.nn.tanh, name="l3")
             l4 = tf.layers.dense(l3, 512, tf.nn.tanh, name="l4")
-            pi = tf.layers.dense(l4, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(np.mean(ac_space.high - ac_space.low)/nact))
+            pi = tf.layers.dense(l4, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
             # logits = plain_dense(l5, pdtype.param_shape()[0], "logits", U.normc_initializer(0.01))
             # pi = plain_dense(l5, nact, "logits", U.normc_initializer(0.01))
 
