@@ -7,14 +7,21 @@ import tensorflow as tf
 from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
+from Redbird_AI.common.cmd_util import load_model, save_model
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
                 nsteps, ent_coef, vf_coef, max_grad_norm):
         sess = tf.get_default_session()
-        self.writer = tf.summary.FileWriter(logger.get_dir())
-        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
+
+
+        ob_shape = (nbatch_act, ob_space.shape[0])
+        nact = np.sum(ac_space.nvec)
+        X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
+
+        act_model = policy( X, sess, nact, ac_space, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+        X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
+        train_model = policy( X, sess, nact, ac_space, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
         A = train_model.pdtype.sample_placeholder([None])
         ADV = tf.placeholder(tf.float32, [None])
@@ -23,7 +30,6 @@ class Model(object):
         OLDVPRED = tf.placeholder(tf.float32, [None])
         LR = tf.placeholder(tf.float32, [])
         CLIPRANGE = tf.placeholder(tf.float32, [])
-        PI_COEFF = tf.placeholder(tf.float32, [])
 
         neglogpac = train_model.pd.neglogp(A)
         entropy = tf.reduce_mean(train_model.pd.entropy(),name="entropy")
@@ -41,7 +47,7 @@ class Model(object):
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
         pi_loss = pg_loss - entropy * ent_coef
         vf_loss = vf_loss_ * vf_coef
-        general_loss = PI_COEFF*pi_loss + vf_loss
+        general_loss = pi_loss + vf_loss
 
         # general_params = tf.trainable_variables("general_layers")
         # pi_params = tf.trainable_variables("pi_layers")
@@ -65,29 +71,24 @@ class Model(object):
         #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
         # vf_grads = list(zip(vf_grads, vf_params))
 
-        self.trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
+        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
         # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
-        _train = self.trainer.apply_gradients(grads)
+        _train = trainer.apply_gradients(grads)
 
-        summaries = tf.summary.merge_all()
-
-        def train(lr, pi_coeff, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
+        def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
             td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
-                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values, PI_COEFF:pi_coeff}
+                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values}
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             stuff =  sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss,summaries, _train],
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],#, summaries],
                 td_map
             )[:-1]
-            for fmt in logger.Logger.CURRENT.output_formats:
-                if isinstance(fmt, logger.KVWriter):
-                    self.writer.add_summary(stuff[-1], global_step=fmt.step)
-
-            return stuff[:-1]
+            # logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
+            return stuff #[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         def save(save_path):
@@ -240,22 +241,22 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
     writer.close()
     if loadModel is not None:
-        model.load(loadModel)
-        import pickle
-        try:
-            with open(loadModel + '.pik', 'rb') as f:
-                env.ob_rms, env.ret_rms = pickle.load(f)
-            print('found observation scaling')
-        except:
-            print('could not find observation scaling')
-        # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
+        env.ob_rms, env.ret_rms = load_model(loadModel)
+        # model.load(loadModel)
+        # import pickle
+        # try:
+        #     with open(loadModel + '.pik', 'rb') as f:
+        #         env.ob_rms, env.ret_rms = pickle.load(f)
+        #     print('found observation scaling')
+        # except:
+        #     print('could not find observation scaling')
+        # # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
     runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, demo=demo)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()
 
     nupdates = total_timesteps//nbatch
-    pi_coeff = 0.
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
         nbatch_train = nbatch // nminibatches
@@ -274,9 +275,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     end = start + nbatch_train
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    if update > 0:
-                        pi_coeff = 1.
-                    mblossvals.append(model.train(lrnow, pi_coeff,  cliprangenow, *slices))
+                    mblossvals.append(model.train(lrnow, cliprangenow, *slices))
         else: # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches
@@ -307,22 +306,20 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
-            # logger.logkv("ob_mean", env.ob_rms.mean)
-            # logger.logkv("ob_var", env.ob_rms.var)
-            # logger.logkv("rew_mean", env.ret_rms.mean)
-            # logger.logkv("rew_var", env.ret_rms.var)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv(lossname, lossval)
             logger.dumpkvs()
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
-            checkdir = osp.join(logger.get_dir(), 'checkpoints')
-            os.makedirs(checkdir, exist_ok=True)
-            savepath = osp.join(checkdir, '%.5i.ckpt'%update)
-            print('Saving to', savepath)
-            model.save(savepath)
-            import pickle
-            with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
-                pickle.dump([env.ob_rms, env.ret_rms], f, -1)
+            save_model(update, env.ob_rms, env.ret_rms)
+            # checkdir = osp.join(logger.get_dir(), 'checkpoints')
+            # os.makedirs(checkdir, exist_ok=True)
+            # savepath = osp.join(checkdir, '%.5i.ckpt'%update)
+            # print('Saving to', savepath)
+            # model.save(savepath)
+            # import pickle
+            # data = env.ob_rms
+            # with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
+            #     pickle.dump([env.ob_rms, env.ret_rms], f, -1)
     env.close()
 
 def safemean(xs):

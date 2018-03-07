@@ -3,6 +3,8 @@ import tensorflow as tf
 from baselines.a2c.utils import conv, fc, conv_to_fc, batch_to_seq, seq_to_batch, lstm, lnlstm
 from baselines.common.distributions import make_pdtype
 from baselines.common import tf_util as U
+from gym import spaces
+
 
 def nature_cnn(unscaled_images):
     """

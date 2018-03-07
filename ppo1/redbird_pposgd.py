@@ -10,10 +10,11 @@ import os
 from baselines.common import explained_variance
 from baselines import logger
 import os.path as osp
+from Redbird_AI.common.cmd_util import save_model, load_model
 import joblib
 
 
-REWARD_SCALE = 10 # get rid of later
+
 
 class RedbirdPposgd():
     def __init__(self, rank, this_test, last_test, earlyTermT_ms=None):
@@ -21,8 +22,8 @@ class RedbirdPposgd():
         self.earlyTermT_ms = earlyTermT_ms
         self.this_test = this_test
         self.last_test = last_test
-        sess = tf.get_default_session()
-        self.writer = tf.summary.FileWriter(self.this_test + '/rank_' + str(self.rank), sess.graph)
+        # sess = tf.get_default_session()
+        # self.writer = tf.summary.FileWriter(self.this_test + '/rank_' + str(self.rank), sess.graph)
 
     def traj_segment_generator(self, pi, env, horizon, stochastic, render=False):
         t = 0
@@ -44,12 +45,18 @@ class RedbirdPposgd():
         news = np.zeros(horizon, 'int32')
         acs = np.array([ac for _ in range(horizon)])
         prevacs = acs.copy()
-
+        self.states = pi.initial_state
+        self.done = False
         while True:
             prevac = ac
-            ac, vpred = pi.act(stochastic, ob)
+            # ac, vpred = pi.act(stochastic, ob)
+            ac, vpred, self.states, _ = pi.step(ob, self.states, self.done)
 
-            #tensorboard logging
+            # if self.rank == 0:
+            #     #tensorboard logging
+            #     logger.logkv("aav_posx", ac[0][0])
+            #     logger.logkv("aav_posy", ac[0][1])
+
 
             if t > 0 and t % horizon == 0:
                 yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
@@ -68,9 +75,7 @@ class RedbirdPposgd():
 
             ac = np.expand_dims(ac, 0)
             ob, rew, new, info = env.step(ac)
-            # ob = ob [0,:] #ben
-            # if self.earlyTermT_ms is not None and info["time_ms"] >= self.earlyTermT_ms:
-            #     new = True
+
 
             # rew = rew * REWARD_SCALE  # ben
             rews[i] = rew
@@ -85,15 +90,17 @@ class RedbirdPposgd():
 
             if new:
                 ep_num += 1
-                summary = tf.Summary(value=[tf.Summary.Value(tag="rew", simple_value=cur_ep_ret)])
-                self.writer.add_summary(summary, ep_num)
-                # self.writer.flush() #ben
+                if self.rank == 0:
+                    for rew_name, rew in info[0]["rews"].items():
+                        logger.logkv(rew_name, rew)
+                    logger.logkv("rew", cur_ep_ret)
+                    logger.dumpkvs()
 
                 ep_rets.append(cur_ep_ret)
                 ep_lens.append(cur_ep_len)
                 cur_ep_ret = 0
                 cur_ep_len = 0
-                ob = env.reset()
+                # ob = env.reset()
             t += 1
     def add_vtarg_and_adv(self, seg, gamma, lam):
         """
@@ -118,7 +125,7 @@ class RedbirdPposgd():
 
         return f
 
-    def learn(self, env, policy_func, *,
+    def learn(self, env, policy, *,
             timesteps_per_actorbatch, # timesteps per actor per update
             clip_param, entcoeff, vf_coef, # clipping parameter epsilon, entropy coeff
             optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
@@ -127,7 +134,7 @@ class RedbirdPposgd():
             callback=None, # you can do anything in the callback, since it takes locals(), globals()
             adam_epsilon=1e-5,
             schedule='constant', # annealing for stepsize parameters (epsilon and adam),
-            render, loadModel, lr, cliprange=0.2, save_interval=200
+            render, loadModel, lr, cliprange=0.2, save_interval=200, log_interval=10
             ):
         if isinstance(lr, float): lr = self.constfn(lr)
         else: assert callable(lr)
@@ -136,8 +143,8 @@ class RedbirdPposgd():
 
         ob_space = env.observation_space
         ac_space = env.action_space
-        pi = policy_func("pi", ob_space, ac_space)  # Construct network for new policy
-        oldpi = policy_func("oldpi", ob_space, ac_space)  # Network for old policy
+        # pi = policy_func("pi", ob_space, ac_space, False)  # Construct network for new policy
+        # oldpi = policy_func("oldpi", ob_space, ac_space, True)  # Network for old policy
         atarg = tf.placeholder(dtype=tf.float32, shape=[None],
                                name="atarg")  # Target advantage function (if applicable)
         ret = tf.placeholder(dtype=tf.float32, shape=[None], name="ret")  # Empirical return TODO: what is this? -ben
@@ -145,7 +152,15 @@ class RedbirdPposgd():
         lrmult = tf.placeholder(name='lrmult', dtype=tf.float32, shape=[]) # learning rate multiplier, updated with schedule
         clip_param = clip_param * lrmult # Annealed cliping parameter epislon
 
-        ob = U.get_placeholder_cached(name="ob")
+        # ob = U.get_placeholder_cached(name="X")
+        ob_shape = [None] + list(ob_space.shape)
+        ob = U.get_placeholder("X", tf.float32, ob_shape)
+        try:
+            nact = np.sum(ac_space.nvec)
+        except:
+            nact = ac_space.shape[0]*2
+        pi = policy(ob, tf.get_default_session(), nact,  ac_space, reuse=False)
+        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, reuse=True)
         ac = pi.pdtype.sample_placeholder([None])
 
         OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
@@ -162,15 +177,18 @@ class RedbirdPposgd():
         surr2 = tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE) * atarg
         pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2))  # PPO's pessimistic surrogate (L^CLIP)
         # vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
-        vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
-        vf_losses1 = tf.square(pi.vpred- ret)
+        # vpredclipped = OLDVPRED + tf.clip_by_value(pi.vpred - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        vpredclipped = OLDVPRED + tf.clip_by_value(pi.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+        # vf_losses1 = tf.square(pi.vpred- ret)
+        vf_losses1 = tf.square(pi.vf - ret)
         vf_losses2 = tf.square(vpredclipped - ret)
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
         total_loss = pol_surr + pol_entpen + vf_loss * vf_coef
         losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent, total_loss]
         loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent", "total"]
 
-        var_list = pi.get_trainable_variables()
+        # var_list = pi.get_trainable_variables()
+        var_list = tf.trainable_variables()#("model")
         lossandgrad = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses + [U.flatgrad(total_loss, var_list)])
         adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
@@ -184,24 +202,20 @@ class RedbirdPposgd():
         #     import cloudpickle
         #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
         #         fh.write(cloudpickle.dumps(make_model))
+        writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
+        writer.close()
         if loadModel is not None:
-            print('loading old model')
-            var_list = tf.trainable_variables()
-            for vars in var_list:
-                try:
-                    saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
-                    saver.restore(tf.get_default_session(), loadModel + '.ckpt')
-                    print("found " + vars.name)
-                except:
-                    print("couldn't find " + vars.name)
-            import pickle
-            try:
-                with open(loadModel + '.pik', 'rb') as f:
-                    env.ob_rms, env.ret_rms = pickle.load(f)
-                print('found observation scaling')
-            except:
-                print('could not find observation scaling')
-            print('finished loading model')
+            env.ob_rms, env.ret_rms = load_model(loadModel)
+            # print('loading old model')
+            # var_list = tf.global_variables()
+            # for vars in var_list:
+            #     try:
+            #         saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+            #         saver.restore(tf.get_default_session(), loadModel + '.ckpt')
+            #         print("found " + vars.name)
+            #     except:
+            #         print("couldn't find " + vars.name)
+            # print('finished loading model')
             # If you want to load weights, also save/load observation scaling inside VecNormalize
 
         # if not newModel:
@@ -219,6 +233,7 @@ class RedbirdPposgd():
         tstart = time.time()
 
         assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
+        tfirststart = time.time()
 
         while True:
             if callback: callback(locals(), globals())
@@ -272,18 +287,18 @@ class RedbirdPposgd():
             #     saver = tf.train.Saver()
             #     saver.save(tf.get_default_session(), self.this_test + '/model/model.ckpt')
             if save_interval and (iters_so_far % save_interval == 0 or iters_so_far == 1) and logger.get_dir():
-                checkdir = osp.join(logger.get_dir(), 'checkpoints')
-                os.makedirs(checkdir, exist_ok=True)
-                savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
-                print('Saving to', savepath)
-                os.makedirs(os.path.dirname(savepath), exist_ok=True)
-                saver = tf.train.Saver(var_list=tf.trainable_variables())
-                var_list = tf.trainable_variables()
-                saver.save(tf.get_default_session(), savepath)
-                import pickle
-                data = env.ob_rms
-                with open(osp.join(checkdir, '%.5i.pik' % iters_so_far), 'wb') as f:
-                    pickle.dump([env.ob_rms, env.ret_rms], f, -1)
+                save_model(iters_so_far, env.ob_rms, env.ret_rms)
+                # checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                # os.makedirs(checkdir, exist_ok=True)
+                # savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
+                # print('Saving to', savepath)
+                # os.makedirs(os.path.dirname(savepath), exist_ok=True)
+                # saver = tf.train.Saver(var_list=tf.global_variables())
+                # saver.save(tf.get_default_session(), savepath)
+                # import pickle
+                # data = env.ob_rms
+                # with open(osp.join(checkdir, '%.5i.pik' % iters_so_far), 'wb') as f:
+                #     pickle.dump([env.ob_rms, env.ret_rms], f, -1)
 
 
             losses = []
@@ -297,16 +312,31 @@ class RedbirdPposgd():
             tnow = time.time()
             fps = float(1 / (tnow - tstart))
             if self.rank == 0:
-                ev = explained_variance(seg["vpred"], seg["tdlamret"])
-                summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
-                self.writer.add_summary(summary,  iters_so_far)
-                summary = tf.Summary(value=[tf.Summary.Value(tag="explained_variance", simple_value=ev)])
-                self.writer.add_summary(summary, iters_so_far)
-                for (lossval, name) in zipsame(meanlosses, loss_names):
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
-                    self.writer.add_summary(summary, iters_so_far)
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=lrnow)])
-                    self.writer.add_summary(summary, iters_so_far)
+                if iters_so_far % log_interval == 0 or iters_so_far == 1:
+                    ev = explained_variance(seg["vpred"], seg["tdlamret"])
+                    logger.logkv("serial_timesteps", iters_so_far * timesteps_per_actorbatch)
+                    logger.logkv("nupdates", iters_so_far)
+                    logger.logkv("total_timesteps", iters_so_far * timesteps_per_actorbatch)
+                    logger.logkv("fps", fps)
+                    logger.logkv("explained_variance", float(ev))
+                    logger.logkv("lr", float(lrnow))
+                    if len(seg['ep_rets']) > 0:
+                        logger.logkv('eprewmean', safemean(seg['ep_rets']))
+                        logger.logkv('eplenmean', safemean(seg["ep_lens"]))
+                    logger.logkv('time_elapsed', tnow - tfirststart)
+                    for (lossval, lossname) in zip(meanlosses, loss_names):
+                        logger.logkv(lossname, lossval)
+                    logger.dumpkvs()
+                # ev = explained_variance(seg["vpred"], seg["tdlamret"])
+                # summary = tf.Summary(value=[tf.Summary.Value(tag="iters_per_sec", simple_value=fps)])
+                # self.writer.add_summary(summary,  iters_so_far)
+                # summary = tf.Summary(value=[tf.Summary.Value(tag="explained_variance", simple_value=ev)])
+                # self.writer.add_summary(summary, iters_so_far)
+                # for (lossval, name) in zipsame(meanlosses, loss_names):
+                #     summary = tf.Summary(value=[tf.Summary.Value(tag="loss_"+name, simple_value=lossval)])
+                #     self.writer.add_summary(summary, iters_so_far)
+                #     summary = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=lrnow)])
+                #     self.writer.add_summary(summary, iters_so_far)
 
             lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
             listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
@@ -317,3 +347,6 @@ class RedbirdPposgd():
 
     def flatten_lists(self, listoflists):
         return [el for list_ in listoflists for el in list_]
+
+def safemean(xs):
+    return np.nan if len(xs) == 0 else np.mean(xs)

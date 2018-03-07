@@ -3,13 +3,14 @@ import sys
 from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
-from redbird_ppo2 import learn
-from policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
+from Redbird_AI.ppo2.redbird_ppo2 import learn
+from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4
 import multiprocessing
 import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
 from baselines.bench import Monitor
+from Redbird_AI.common.cmd_util import iarc_arg_parser
 import os
 
 def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs=None, start_index=0):
@@ -67,13 +68,13 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     env = SubprocVecEnv(envs)
     env = VecNormalize(env, ret=False)
 
-    policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
+    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3}[policy]
 
     # env = VecFrameStack(make_IARC_env(env_id, 8, seed, earlyTerminationTime_ms), 4)
 
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
-        ent_coef=0.0001,
+        ent_coef=.01,
         lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
@@ -89,18 +90,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def main():
-    import argparse
-    import os
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'mlp'], default='mlp')
-    parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
+    parser = iarc_arg_parser()
     parser.add_argument('--nenv', help='Number of environments to run',type = int, default=int(5))
-    parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=int(10e7))
-    parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
-    parser.add_argument('--model', help='Model path', default=None)
-    parser.add_argument('--initial_lr', help='Initial learning rate', type = float, default=int(2.5e-4))
-    parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     args = parser.parse_args()
 
 
