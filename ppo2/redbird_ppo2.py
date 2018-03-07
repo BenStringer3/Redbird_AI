@@ -91,28 +91,28 @@ class Model(object):
             return stuff #[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
-        def save(save_path):
-
-            # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            saver = tf.train.Saver(var_list=tf.global_variables())
-            saver.save(tf.get_default_session(), save_path)
-            # ps = sess.run(general_params + vf_params + pi_params)
-            # joblib.dump(ps, save_path)
-
-
-        def load(load_path):
-            print('loading old model')
-            # from tensorflow.contrib.framework.python.framework.checkpoint_utils import  list_variables
-            var_list = tf.global_variables() # trainable_variables()
-            for vars in var_list:
-                try:
-                    saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
-                    saver.restore(tf.get_default_session(), load_path + '.ckpt')
-                    print("found " + vars.name)
-                except:
-                    print("couldn't find " + vars.name)
-            print('finished loading model')
+        # def save(save_path):
+        #
+        #     # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
+        #     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        #     saver = tf.train.Saver(var_list=tf.global_variables())
+        #     saver.save(tf.get_default_session(), save_path)
+        #     # ps = sess.run(general_params + vf_params + pi_params)
+        #     # joblib.dump(ps, save_path)
+        #
+        #
+        # def load(load_path):
+        #     print('loading old model')
+        #     # from tensorflow.contrib.framework.python.framework.checkpoint_utils import  list_variables
+        #     var_list = tf.global_variables() # trainable_variables()
+        #     for vars in var_list:
+        #         try:
+        #             saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+        #             saver.restore(tf.get_default_session(), load_path + '.ckpt')
+        #             print("found " + vars.name)
+        #         except:
+        #             print("couldn't find " + vars.name)
+        #     print('finished loading model')
             # saver = tf.train.Saver()
             # try:
             #     saver.restore(tf.get_default_session(), load_path)
@@ -132,8 +132,8 @@ class Model(object):
         self.step = act_model.step
         self.value = act_model.value
         self.initial_state = act_model.initial_state
-        self.save = save
-        self.load = load
+        # self.save = save
+        # self.load = load
         tf.global_variables_initializer().run(session=sess) #pylint: disable=E1101
 
 class Runner(object):

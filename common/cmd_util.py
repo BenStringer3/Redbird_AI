@@ -30,6 +30,7 @@ def iarc_arg_parser():
     parser.add_argument('--logdir', help='path to logging directory', default='/tmp/redbird_AI_logdir/')
     parser.add_argument('--model', help='Model path', default=None)
     parser.add_argument('--initial_lr', help='Initial learning rate', type = float, default=float(2.5e-4))
+    parser.add_argument('--ent_coef', help='entropy coefficient', type=float, default=0.01)
     parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
     return parser
 

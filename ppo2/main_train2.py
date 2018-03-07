@@ -35,7 +35,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     ret= SubprocVecEnv(envs)
     return ret
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, initial_lr=2.5e-4):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4):
     from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -74,7 +74,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
-        ent_coef=.01,
+        ent_coef=ent_coef,
         lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
@@ -108,7 +108,7 @@ def main():
     seed = int(time.time())
 
     train(args.env, num_timesteps=args.num_timesteps, seed=seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv, initial_lr=args.initial_lr) #, logdir=args.logdir, render=args.render,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv, ent_coef=args.ent_coef, initial_lr=args.initial_lr) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':

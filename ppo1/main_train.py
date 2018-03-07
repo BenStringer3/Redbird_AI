@@ -15,7 +15,7 @@ from Redbird_AI.common.cmd_util import iarc_arg_parser
 from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
 from Redbird_AI.common.policies import MlpPolicy3, MlpPolicy4
 
-def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, initial_lr=2.5e-4):
+def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, ent_coef, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
     rank = MPI.COMM_WORLD.Get_rank() #the id of this process
     sess = U.single_threaded_session() #tensorflow session
@@ -79,7 +79,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     redbird.learn(env, policy, #policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
            timesteps_per_actorbatch=128,  # 256,
-           clip_param=0.2, entcoeff=0.001, vf_coef=0.5,
+           clip_param=0.2, entcoeff=ent_coef, vf_coef=0.5,
            optim_epochs=3, optim_stepsize=initial_lr, optim_batchsize=32,
            gamma=0.99, lam=0.95,
            schedule='linear',
@@ -93,7 +93,7 @@ def main():
     args = parser.parse_args()
 
     print("beginning training")
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.policy, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms, initial_lr=args.initial_lr)
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, kind=args.policy, logdir=args.logdir, render=args.render, loadModel=args.model, earlyTermT_ms=args.earlyTermT_ms, ent_coef=args.ent_coef, initial_lr=args.initial_lr)
 
 
 if __name__ == '__main__':
