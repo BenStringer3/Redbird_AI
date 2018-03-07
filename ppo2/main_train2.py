@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import sys
+sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
+
 from baselines import logger
-# from baselines.common.cmd_util import make_atari_env, atari_arg_parser
-from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from Redbird_AI.ppo2.redbird_ppo2 import learn
 from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4
 import multiprocessing

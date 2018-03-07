@@ -8,6 +8,7 @@ from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
 from Redbird_AI.common.cmd_util import load_model, save_model
+from collections import Counter
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
@@ -158,6 +159,7 @@ class Runner(object):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
         mb_states = self.states
         epinfos = []
+        #rews = []
         for _ in range(self.nsteps):
             actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
             mb_obs.append(self.obs.copy())
@@ -166,12 +168,16 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-            if self.demo:
-                self.env.render()
-            else:
-                for info in infos:
-                    maybeepinfo = info.get('episode')
-                    if maybeepinfo: epinfos.append(maybeepinfo)
+
+            for info in infos:
+
+                maybeepinfo = info.get('episode')
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
+               # mayberewsinfo = info.get('rews')
+               # if mayberewsinfo : rews.append(mayberewsinfo)
+
+            #rews.append(sum(list(Counter(info.get('rews')) for info in infos)))
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -195,11 +201,10 @@ class Runner(object):
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
         mb_returns = mb_advs + mb_values
-        if not self.demo:
-            return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-                mb_states, epinfos)
-        else:
-            return mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs,  mb_states, epinfos
+
+        return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
+            mb_states, epinfos)
+
 # obs, returns, masks, actions, values, neglogpacs, states = runner.run()
 def sf01(arr):
     """
@@ -238,7 +243,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
     #         fh.write(cloudpickle.dumps(make_model))
     model = make_model()
-    writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
+    writer = tf.summary.FileWriter(logger.get_dir() + '/tb/', tf.get_default_graph())
     writer.close()
     if loadModel is not None:
         env.ob_rms, env.ret_rms = load_model(loadModel)
@@ -305,6 +310,10 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv("lr", float(lrnow))
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+            logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
+            logger.logkv('direction_reward', safemean([epinfo['direction'] for epinfo in epinfobuf]))
+            logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
+            logger.logkv('end_reward', safemean([epinfo['end'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv(lossname, lossval)
