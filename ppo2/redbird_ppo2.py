@@ -7,6 +7,7 @@ import tensorflow as tf
 from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
+from Redbird_AI.common.cmd_util import load_model, save_model
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
@@ -242,15 +243,16 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
     writer.close()
     if loadModel is not None:
-        model.load(loadModel)
-        import pickle
-        try:
-            with open(loadModel + '.pik', 'rb') as f:
-                env.ob_rms, env.ret_rms = pickle.load(f)
-            print('found observation scaling')
-        except:
-            print('could not find observation scaling')
-        # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
+        env.ob_rms, env.ret_rms = load_model(loadModel)
+        # model.load(loadModel)
+        # import pickle
+        # try:
+        #     with open(loadModel + '.pik', 'rb') as f:
+        #         env.ob_rms, env.ret_rms = pickle.load(f)
+        #     print('found observation scaling')
+        # except:
+        #     print('could not find observation scaling')
+        # # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
     runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, demo=demo)
 
     epinfobuf = deque(maxlen=100)
@@ -310,15 +312,16 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                 logger.logkv(lossname, lossval)
             logger.dumpkvs()
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
-            checkdir = osp.join(logger.get_dir(), 'checkpoints')
-            os.makedirs(checkdir, exist_ok=True)
-            savepath = osp.join(checkdir, '%.5i.ckpt'%update)
-            print('Saving to', savepath)
-            model.save(savepath)
-            import pickle
-            data = env.ob_rms
-            with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
-                pickle.dump([env.ob_rms, env.ret_rms], f, -1)
+            save_model(update, env.ob_rms, env.ret_rms)
+            # checkdir = osp.join(logger.get_dir(), 'checkpoints')
+            # os.makedirs(checkdir, exist_ok=True)
+            # savepath = osp.join(checkdir, '%.5i.ckpt'%update)
+            # print('Saving to', savepath)
+            # model.save(savepath)
+            # import pickle
+            # data = env.ob_rms
+            # with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
+            #     pickle.dump([env.ob_rms, env.ret_rms], f, -1)
     env.close()
 
 def safemean(xs):

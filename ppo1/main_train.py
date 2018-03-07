@@ -13,7 +13,7 @@ sys.path.append('/home/bcstri01/env2/Redbird_AI')
 sys.path.append('/home/bcstri01/env2')
 from Redbird_AI.common.cmd_util import iarc_arg_parser
 from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
-from Redbird_AI.common.policies import MlpPolicy3
+from Redbird_AI.common.policies import MlpPolicy3, MlpPolicy4
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
@@ -75,7 +75,8 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     # env.seed(workerseed)
     redbird = RedbirdPposgd(rank, this_test, None, earlyTermT_ms=earlyTermT_ms)
 
-    redbird.learn(env, MlpPolicy3, #policy_fn,
+    policy = {"MlpPolicy3": MlpPolicy3, "MlpPolicy4" : MlpPolicy4}[kind]
+    redbird.learn(env, policy, #policy_fn,
            max_timesteps=int(num_timesteps * 1.1),
            timesteps_per_actorbatch=128,  # 256,
            clip_param=0.2, entcoeff=0.001, vf_coef=0.5,

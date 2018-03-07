@@ -7,27 +7,6 @@ import numpy as np
 
 class MlpPolicy3(object):
 
-    # def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False): #pylint: disable=W0613
-    #     # nh, nw, nc = ob_space.shape
-    #     # ob_shape = (nbatch, nh, nw, nc)
-    #
-    #     # ob_shape = (nbatch, ob_space.shape[0])
-    #     ob_shape = nbatch + list(ob_space.shape)
-    #     if isinstance(ac_space, spaces.Dict):
-    #         nact = 0
-    #         for key, space in ac_space.spaces.items():
-    #             nact = nact + np.sum(space.shape)
-    #     else:
-    #         nact = np.sum(ac_space.nvec)
-    #
-    #     # X = tf.placeholder(tf.float32, ob_shape, "X") #obs
-    #     X = U.get_placeholder("X", tf.float32, ob_shape)
-    #
-    #     pi, vf, step, value = self._buildModel(X, sess, nact, reuse, ac_space)
-
-
-
-
     def __init__(self, X, sess, nact,  ac_space, reuse=False):
         with tf.variable_scope("model", reuse=reuse):
             ob = X
@@ -86,6 +65,60 @@ class MlpPolicy3(object):
 
             def value(ob, *_args, **_kwargs):
                 return sess.run(vf, {X:ob})
+        self.X = X
+        self.pi = pi
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+class MlpPolicy4(object):
+
+    def _dense(self, x, size, name, weight_init=None, bias=True):
+        with tf.name_scope(name):
+            w = tf.contrib.model_pruning.apply_mask(tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init))
+            ret = tf.matmul(x, w)
+            if bias:
+                b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
+                return ret + b
+            else:
+                return ret
+
+    def __init__(self, X, sess, nact, ac_space, reuse=False):
+        with tf.variable_scope("model", reuse=reuse):
+            ob = X
+            # l1 = tf.layers.dense(inputs=ob, units=512 * 2, activation=tf.nn.tanh, name="l1")
+            l1 = self._dense(ob,  1024, name="l1")
+
+            tf.summary.histogram(l1.name, l1)
+
+            l2 = tf.layers.dense(inputs=l1, units=512 * 2, activation=tf.nn.tanh, name="l2")
+
+            # logits branch
+            l3 = tf.layers.dense(l2, 512, tf.nn.tanh, name="l3")
+            l4 = tf.layers.dense(l3, 512, tf.nn.tanh, name="l4")
+            pi = tf.layers.dense(l4, nact, activation=None, name="logits",
+                                 kernel_initializer=U.normc_initializer(
+                                     np.mean(ac_space.high - ac_space.low) / nact))
+
+            # vpred branch
+            l3_v = tf.layers.dense(l2, 512, tf.nn.tanh, name="l3_v")
+            l4_v = tf.layers.dense(l3_v, 512, tf.nn.tanh, name="l4_v")
+            vf = tf.layers.dense(l4_v, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
+
+            self.pdtype = make_pdtype(ac_space)
+            self.pd = self.pdtype.pdfromflat(pi)
+
+            a0 = self.pd.sample()
+            neglogp0 = self.pd.neglogp(a0)
+            self.initial_state = None
+
+            def step(ob, *_args, **_kwargs):
+                a, v, neglogp = sess.run([a0, vf, neglogp0], {X: ob})
+                return a, v, self.initial_state, neglogp
+
+            def value(ob, *_args, **_kwargs):
+                return sess.run(vf, {X: ob})
+
         self.X = X
         self.pi = pi
         self.vf = vf

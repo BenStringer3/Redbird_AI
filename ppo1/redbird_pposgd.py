@@ -10,6 +10,7 @@ import os
 from baselines.common import explained_variance
 from baselines import logger
 import os.path as osp
+from Redbird_AI.common.cmd_util import save_model, load_model
 import joblib
 
 
@@ -199,17 +200,20 @@ class RedbirdPposgd():
         #     import cloudpickle
         #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
         #         fh.write(cloudpickle.dumps(make_model))
+        writer = tf.summary.FileWriter(logger.get_dir(), tf.get_default_graph())
+        writer.close()
         if loadModel is not None:
-            print('loading old model')
-            var_list = tf.global_variables()
-            for vars in var_list:
-                try:
-                    saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
-                    saver.restore(tf.get_default_session(), loadModel + '.ckpt')
-                    print("found " + vars.name)
-                except:
-                    print("couldn't find " + vars.name)
-            print('finished loading model')
+            env.ob_rms, env.ret_rms = load_model(loadModel)
+            # print('loading old model')
+            # var_list = tf.global_variables()
+            # for vars in var_list:
+            #     try:
+            #         saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
+            #         saver.restore(tf.get_default_session(), loadModel + '.ckpt')
+            #         print("found " + vars.name)
+            #     except:
+            #         print("couldn't find " + vars.name)
+            # print('finished loading model')
             # If you want to load weights, also save/load observation scaling inside VecNormalize
 
         # if not newModel:
@@ -281,17 +285,18 @@ class RedbirdPposgd():
             #     saver = tf.train.Saver()
             #     saver.save(tf.get_default_session(), self.this_test + '/model/model.ckpt')
             if save_interval and (iters_so_far % save_interval == 0 or iters_so_far == 1) and logger.get_dir():
-                checkdir = osp.join(logger.get_dir(), 'checkpoints')
-                os.makedirs(checkdir, exist_ok=True)
-                savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
-                print('Saving to', savepath)
-                os.makedirs(os.path.dirname(savepath), exist_ok=True)
-                saver = tf.train.Saver(var_list=tf.global_variables())
-                saver.save(tf.get_default_session(), savepath)
-                import pickle
-                data = env.ob_rms
-                with open(osp.join(checkdir, '%.5i.pik' % iters_so_far), 'wb') as f:
-                    pickle.dump([env.ob_rms, env.ret_rms], f, -1)
+                save_model(iters_so_far, env.ob_rms, env.ret_rms)
+                # checkdir = osp.join(logger.get_dir(), 'checkpoints')
+                # os.makedirs(checkdir, exist_ok=True)
+                # savepath = osp.join(checkdir, '%.5i.ckpt' % iters_so_far)
+                # print('Saving to', savepath)
+                # os.makedirs(os.path.dirname(savepath), exist_ok=True)
+                # saver = tf.train.Saver(var_list=tf.global_variables())
+                # saver.save(tf.get_default_session(), savepath)
+                # import pickle
+                # data = env.ob_rms
+                # with open(osp.join(checkdir, '%.5i.pik' % iters_so_far), 'wb') as f:
+                #     pickle.dump([env.ob_rms, env.ret_rms], f, -1)
 
 
             losses = []
