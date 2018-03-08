@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import sys
+sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
+
 from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from redbird_ppo2 import learn, Runner, Model
-from policies import CnnPolicy, LstmPolicy, LnLstmPolicy, MlpPolicy3
+from Redbird_AI.common.policies import  MlpPolicy3
 import multiprocessing
 import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
+from Redbird_AI.common.cmd_util import iarc_arg_parser, load_model
 import numpy as np
 
 def demo(*, policy, env, nsteps, loadModel=None, render=False):
@@ -21,14 +24,15 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False):
 
     model = make_model()
     if loadModel is not None:
-        model.load(loadModel)
-        import pickle
-        try:
-            with open(loadModel + '.pik', 'rb') as f:
-                env.ob_rms, env.ret_rms = pickle.load(f)
-            print('found observation scaling')
-        except:
-            print('could not find observation scaling')
+        env.ob_rms, env.ret_rms = load_model(loadModel)
+        #load(loadModel)
+        # import pickle
+        # try:
+        #     with open(loadModel + '.pik', 'rb') as f:
+        #         env.ob_rms, env.ret_rms = pickle.load(f)
+        #     print('found observation scaling')
+        # except:
+        #     print('could not find observation scaling')
 
     # runner = Runner(env=env, model=model, nsteps=nsteps, gamma=0.99, lam=0.95, demo=True)
 
@@ -91,7 +95,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     # env = SubprocVecEnv(envs)
     # env = VecNormalize(env)
 
-    policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy, 'mlp' : MlpPolicy3}[policy]
+    policy = {'MlpPolicy3' : MlpPolicy3}[policy]
     demo(policy=policy, env=env, nsteps=128, loadModel=loadModel,render=render)
 
 def str2bool(v):
@@ -104,15 +108,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def main():
-    import argparse
-    import os
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'mlp'], default='mlp')
-    parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
-    parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=int(10e7))
-    parser.add_argument('--model', help='Model path', default=None)
-    parser.add_argument('--earlyTermT_ms', help='time in ms to cut the game short at', type=int, default=10*60*1000)
+    parser = iarc_arg_parser()
+    args = parser.parse_args()
     args = parser.parse_args()
     logger.configure('/tmp/main_demo2_logdir/')
 
