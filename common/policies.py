@@ -25,10 +25,10 @@ class MlpPolicy3(object):
 
         # with tf.variable_scope("vf_layers", reuse=reuse):
             # vpred branch
-            l3_v = tf.layers.dense(l1, 512, tf.nn.tanh, name="l3_v")
-            l4_v = tf.layers.dense(l3_v, 512, tf.nn.tanh, name="l4_v")
+            # l3_v = tf.layers.dense(l1, 512, tf.nn.tanh, name="l3_v")
+            # l4_v = tf.layers.dense(l3_v, 512, tf.nn.tanh, name="l4_v")
             # vf = plain_dense(l4_v, 1, "value", U.normc_initializer(1.0))[:, 0]
-            vf = tf.layers.dense(l4_v, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
+            vf = tf.layers.dense(l4, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
 
         if isinstance(ac_space, spaces.Dict):
             self.pdtype0 = make_pdtype(ac_space.spaces["aav_pos"])
