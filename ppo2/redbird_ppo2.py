@@ -15,66 +15,66 @@ class Model(object):
                 nsteps, ent_coef, vf_coef, max_grad_norm):
         sess = tf.get_default_session()
 
+        with tf.device('/device:GPU:1'):
+            ob_shape = (nbatch_act, ob_space.shape[0])
+            nact = np.sum(ac_space.nvec)
+            X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
-        ob_shape = (nbatch_act, ob_space.shape[0])
-        nact = np.sum(ac_space.nvec)
-        X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
+            act_model = policy( X, sess, nact, ac_space, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+            X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
+            train_model = policy( X, sess, nact, ac_space, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
-        act_model = policy( X, sess, nact, ac_space, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
-        X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
-        train_model = policy( X, sess, nact, ac_space, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
+            A = train_model.pdtype.sample_placeholder([None])
+            ADV = tf.placeholder(tf.float32, [None])
+            R = tf.placeholder(tf.float32, [None])
+            OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
+            OLDVPRED = tf.placeholder(tf.float32, [None])
+            LR = tf.placeholder(tf.float32, [])
+            CLIPRANGE = tf.placeholder(tf.float32, [])
 
-        A = train_model.pdtype.sample_placeholder([None])
-        ADV = tf.placeholder(tf.float32, [None])
-        R = tf.placeholder(tf.float32, [None])
-        OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
-        OLDVPRED = tf.placeholder(tf.float32, [None])
-        LR = tf.placeholder(tf.float32, [])
-        CLIPRANGE = tf.placeholder(tf.float32, [])
+            neglogpac = train_model.pd.neglogp(A)
+            entropy = tf.reduce_mean(train_model.pd.entropy(),name="entropy")
 
-        neglogpac = train_model.pd.neglogp(A)
-        entropy = tf.reduce_mean(train_model.pd.entropy(),name="entropy")
+            vpred = train_model.vf
+            vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
+            vf_losses1 = tf.square(vpred - R)
+            vf_losses2 = tf.square(vpredclipped - R)
+            vf_loss_ = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
+            ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
+            pg_losses = -ADV * ratio
+            pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
+            pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+            approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
+            clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
+            pi_loss = pg_loss - entropy * ent_coef
+            vf_loss = vf_loss_ * vf_coef
+            general_loss = pi_loss + vf_loss
 
-        vpred = train_model.vf
-        vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
-        vf_losses1 = tf.square(vpred - R)
-        vf_losses2 = tf.square(vpredclipped - R)
-        vf_loss_ = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
-        ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
-        pg_losses = -ADV * ratio
-        pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
-        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
-        approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
-        clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        pi_loss = pg_loss - entropy * ent_coef
-        vf_loss = vf_loss_ * vf_coef
-        general_loss = pi_loss + vf_loss
+            # general_params = tf.trainable_variables("general_layers")
+            # pi_params = tf.trainable_variables("pi_layers")
+            # vf_params = tf.trainable_variables("vf_layers")
+            params = tf.trainable_variables("model")
 
-        # general_params = tf.trainable_variables("general_layers")
-        # pi_params = tf.trainable_variables("pi_layers")
-        # vf_params = tf.trainable_variables("vf_layers")
-        params = tf.trainable_variables("model")
+            # general_grads = tf.gradients(general_loss, general_params)
+            # pi_grads = tf.gradients(pi_loss, pi_params)
+            # vf_grads = tf.gradients(vf_loss, vf_params)
+            grads = tf.gradients(general_loss, params)
 
-        # general_grads = tf.gradients(general_loss, general_params)
-        # pi_grads = tf.gradients(pi_loss, pi_params)
-        # vf_grads = tf.gradients(vf_loss, vf_params)
-        grads = tf.gradients(general_loss, params)
+            if max_grad_norm is not None:
+                general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
+            grads = list(zip(general_grads, params))
 
-        if max_grad_norm is not None:
-            general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
-        grads = list(zip(general_grads, params))
+            # if max_grad_norm is not None:
+            #     pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
+            # pi_grads = list(zip(pi_grads, pi_params))
+            #
+            # if max_grad_norm is not None:
+            #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
+            # vf_grads = list(zip(vf_grads, vf_params))
 
-        # if max_grad_norm is not None:
-        #     pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
-        # pi_grads = list(zip(pi_grads, pi_params))
-        #
-        # if max_grad_norm is not None:
-        #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
-        # vf_grads = list(zip(vf_grads, vf_params))
-
-        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
-        # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
-        _train = trainer.apply_gradients(grads)
+            trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
+            # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
+            _train = trainer.apply_gradients(grads)
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
