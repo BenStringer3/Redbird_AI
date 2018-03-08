@@ -4,7 +4,7 @@ sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
 
 from baselines import logger
 from Redbird_AI.ppo2.redbird_ppo2 import learn
-from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4
+from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, MlpPolicy5
 import multiprocessing
 import tensorflow as tf
 import gym
@@ -68,7 +68,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     env = SubprocVecEnv(envs)
     env = VecNormalize(env, ret=False)
 
-    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3}[policy]
+    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5}[policy]
 
     # env = VecFrameStack(make_IARC_env(env_id, 8, seed, earlyTerminationTime_ms), 4)
 
