@@ -9,7 +9,7 @@ import multiprocessing
 import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
-from baselines.bench import Monitor
+from Redbird_AI.common.monitor import Monitor
 from Redbird_AI.common.cmd_util import iarc_arg_parser
 import os
 
@@ -24,7 +24,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     def make_env(rank): # pylint: disable=C0111
         def _thunk():
             env = gym.make(env_id)
-            env.seed(seed + rank)
+            env.seed(seed + 1000*rank)
             env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
             env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
             # return wrap_deepmind(env, **wrapper_kwargs)

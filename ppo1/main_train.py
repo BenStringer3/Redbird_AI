@@ -14,6 +14,7 @@ sys.path.append('/home/bcstri01/env2')
 from Redbird_AI.common.cmd_util import iarc_arg_parser
 from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
 from Redbird_AI.common.policies import MlpPolicy3, MlpPolicy4
+from Redbird_AI.common.monitor import Monitor
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, ent_coef, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
@@ -56,7 +57,7 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
         env = gym.make(env_id)
         env.seed(seed+ 10000*rank)
         env.env.earlyTerminationTime_ms = earlyTermT_ms
-        env = bench.Monitor(env, logger.get_dir())
+        env = Monitor(env, logger.get_dir())
         # env = Monitor(env, logger.get_dir())
         return env
 
