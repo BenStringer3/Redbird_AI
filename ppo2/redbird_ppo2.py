@@ -12,11 +12,10 @@ from collections import Counter
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                nsteps, ent_coef, vf_coef, max_grad_norm, gpu):
+                nsteps, vf_coef, max_grad_norm, gpu=0):
         sess = tf.get_default_session()
 
         with tf.device('/device:GPU:'+ str(gpu)):
-            ob_shape = (nbatch_act, ob_space.shape[0])
             nact = np.sum(ac_space.nvec)
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
@@ -30,6 +29,7 @@ class Model(object):
             OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
             OLDVPRED = tf.placeholder(tf.float32, [None])
             LR = tf.placeholder(tf.float32, [])
+            ENT_COEFF = tf.placeholder(tf.float32, [])
             CLIPRANGE = tf.placeholder(tf.float32, [])
 
             neglogpac = train_model.pd.neglogp(A)
@@ -46,41 +46,25 @@ class Model(object):
             pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
             approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
             clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-            pi_loss = pg_loss - entropy * ent_coef
+            pi_loss = pg_loss - entropy * ENT_COEFF
             vf_loss = vf_loss_ * vf_coef
             general_loss = pi_loss + vf_loss
 
-            # general_params = tf.trainable_variables("general_layers")
-            # pi_params = tf.trainable_variables("pi_layers")
-            # vf_params = tf.trainable_variables("vf_layers")
             params = tf.trainable_variables("model")
-
-            # general_grads = tf.gradients(general_loss, general_params)
-            # pi_grads = tf.gradients(pi_loss, pi_params)
-            # vf_grads = tf.gradients(vf_loss, vf_params)
             grads = tf.gradients(general_loss, params)
 
             if max_grad_norm is not None:
                 general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
             grads = list(zip(general_grads, params))
 
-            # if max_grad_norm is not None:
-            #     pi_grads, _grad_norm = tf.clip_by_global_norm(pi_grads, max_grad_norm)
-            # pi_grads = list(zip(pi_grads, pi_params))
-            #
-            # if max_grad_norm is not None:
-            #     vf_grads, _grad_norm = tf.clip_by_global_norm(vf_grads, max_grad_norm)
-            # vf_grads = list(zip(vf_grads, vf_params))
-
             trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
-            # _train = trainer.apply_gradients(general_grads + vf_grads + pi_grads)
             _train = trainer.apply_gradients(grads)
 
-        def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
+        def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, ent_coeff, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
             td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
-                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values}
+                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values, ENT_COEFF:ent_coeff}
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
@@ -91,41 +75,6 @@ class Model(object):
             # logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
             return stuff #[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
-
-        # def save(save_path):
-        #
-        #     # os.makedirs(os.path.dirname(self.this_test + '/model/model.ckpt'), exist_ok=True)
-        #     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        #     saver = tf.train.Saver(var_list=tf.global_variables())
-        #     saver.save(tf.get_default_session(), save_path)
-        #     # ps = sess.run(general_params + vf_params + pi_params)
-        #     # joblib.dump(ps, save_path)
-        #
-        #
-        # def load(load_path):
-        #     print('loading old model')
-        #     # from tensorflow.contrib.framework.python.framework.checkpoint_utils import  list_variables
-        #     var_list = tf.global_variables() # trainable_variables()
-        #     for vars in var_list:
-        #         try:
-        #             saver = tf.train.Saver({vars.name[:-2]: vars})  # the [:-2] is kinda jerry-rigged but ..
-        #             saver.restore(tf.get_default_session(), load_path + '.ckpt')
-        #             print("found " + vars.name)
-        #         except:
-        #             print("couldn't find " + vars.name)
-        #     print('finished loading model')
-            # saver = tf.train.Saver()
-            # try:
-            #     saver.restore(tf.get_default_session(), load_path)
-            # except tf.errors.InvalidArgumentError:
-            #     print('couldn''t find a valid model at that location')
-
-            # loaded_params = joblib.load(load_path)
-            # restores = []
-            # for p, loaded_p in zip(general_params + vf_params + pi_params, loaded_params):
-            #     restores.append(p.assign(loaded_p))
-            # sess.run(restores)
-            # # If you want to load weights, also save/load observation scaling inside VecNormalize
 
         self.train = train
         self.train_model = train_model
@@ -223,6 +172,8 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
+    if isinstance(ent_coef, float): ent_coef = constfn(ent_coef)
+    else: assert callable(ent_coef)
     if isinstance(cliprange, float): cliprange = constfn(cliprange)
     else: assert callable(cliprange)
     total_timesteps = int(total_timesteps)
@@ -234,26 +185,15 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     nbatch_train = nbatch // nminibatches
 
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
-                    nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
+                    nsteps=nsteps, vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm, gpu=gpu)
-    # if save_interval and logger.get_dir():
-    #     import cloudpickle
-    #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
-    #         fh.write(cloudpickle.dumps(make_model))
+
     model = make_model()
     writer = tf.summary.FileWriter(logger.get_dir() + '/tb/', tf.get_default_graph())
     writer.close()
     if loadModel is not None:
         env.ob_rms, env.ret_rms = load_model(loadModel)
-        # model.load(loadModel)
-        # import pickle
-        # try:
-        #     with open(loadModel + '.pik', 'rb') as f:
-        #         env.ob_rms, env.ret_rms = pickle.load(f)
-        #     print('found observation scaling')
-        # except:
-        #     print('could not find observation scaling')
-        # # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
+
     runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
@@ -266,6 +206,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         tstart = time.time()
         frac = 1.0 - (update - 1.0) / nupdates
         lrnow = lr(frac)
+        ent_coeff_now = ent_coef(frac)
         cliprangenow = cliprange(frac)
         obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
         epinfobuf.extend(epinfos)
@@ -278,7 +219,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     end = start + nbatch_train
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mblossvals.append(model.train(lrnow, cliprangenow, *slices))
+                    mblossvals.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now))
         else: # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches
@@ -306,6 +247,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv("fps", fps)
             logger.logkv("explained_variance", float(ev))
             logger.logkv("lr", float(lrnow))
+            logger.logkv("ent_coef", float(ent_coeff_now))
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
