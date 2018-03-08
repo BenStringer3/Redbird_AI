@@ -12,10 +12,10 @@ from collections import Counter
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                nsteps, ent_coef, vf_coef, max_grad_norm):
+                nsteps, ent_coef, vf_coef, max_grad_norm, gpu):
         sess = tf.get_default_session()
 
-        with tf.device('/device:GPU:1'):
+        with tf.device('/device:GPU:'+ str(gpu)):
             ob_shape = (nbatch_act, ob_space.shape[0])
             nact = np.sum(ac_space.nvec)
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
@@ -139,14 +139,12 @@ class Model(object):
 
 class Runner(object):
 
-    def __init__(self, *, env, model, nsteps, gamma, lam, demo=False):
-        self.demo=demo
+    def __init__(self, *, env, model, nsteps, gamma, lam):
         self.env = env
         self.model = model
-        if not self.demo:
-            nenv = env.num_envs
-        else:
-            nenv = 1
+
+        nenv = env.num_envs
+
         self.obs = np.zeros((nenv,) + env.observation_space.shape, dtype=model.train_model.X.dtype.name)
         self.obs[:] = env.reset()
         self.gamma = gamma
@@ -221,7 +219,7 @@ def constfn(val):
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0, loadModel=None, demo=False):
+            save_interval=0, loadModel=None, gpu=0):
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -237,7 +235,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
-                    max_grad_norm=max_grad_norm)
+                    max_grad_norm=max_grad_norm, gpu=gpu)
     # if save_interval and logger.get_dir():
     #     import cloudpickle
     #     with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
@@ -256,7 +254,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         # except:
         #     print('could not find observation scaling')
         # # data =  m4p.loadmat(osp.join(logger.get_dir(), 'checkpoints/obs_scaling.mat'))
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, demo=demo)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()

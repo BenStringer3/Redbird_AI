@@ -9,9 +9,11 @@ import multiprocessing
 import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
-from Redbird_AI.common.monitor import Monitor
-from Redbird_AI.common.cmd_util import iarc_arg_parser
+from Redbird_AI.common.rb_monitor import RB_Monitor
+from baselines.bench import Monitor
+from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env
 import os
+
 
 def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs=None, start_index=0):
     import gym
@@ -27,7 +29,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
             env.seed(seed + 1000*rank)
             env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
             env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-            # return wrap_deepmind(env, **wrapper_kwargs)
+            env = RB_Monitor(env)
             return env
         return _thunk
     set_global_seeds(seed)
@@ -35,7 +37,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     ret= SubprocVecEnv(envs)
     return ret
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0):
     from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -49,14 +51,16 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     tf.Session(config=config).__enter__()
 
     #begin mujoco style
-    def make_env(rank):
+    def make_env_fn(rank):
         def _thunk():
-            from baselines import bench
-            env = gym.make(env_id)
-            env.seed(seed + rank)
-            env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
-            # env = bench.Monitor(env, logger.get_dir())
-            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+            env = make_env(env_id, earlyTerminationTime_ms, rank, seed)
+        #     from baselines import bench
+        #     env = gym.make(env_id)
+        #     env.seed(seed + 1000*rank)
+        #     env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
+        #     # env = bench.Monitor(env, logger.get_dir())
+        #     env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+        #     env = RB_Monitor(env)
             return env
         return _thunk
     # env = DummyVecEnv([make_env])
@@ -64,7 +68,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     set_global_seeds(seed)
     #end mujoco style
 
-    envs = [make_env(i) for i in range(nenv)]
+    envs = [make_env_fn(i) for i in range(nenv)]
     env = SubprocVecEnv(envs)
     env = VecNormalize(env, ret=False)
 
@@ -78,7 +82,8 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
         lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
-        save_interval=500, loadModel=loadModel)
+        save_interval=500, loadModel=loadModel,
+          gpu=gpu)
 
 def str2bool(v):
     import argparse
@@ -92,6 +97,7 @@ def str2bool(v):
 def main():
     parser = iarc_arg_parser()
     parser.add_argument('--nenv', help='Number of environments to run',type = int, default=int(5))
+    parser.add_argument('--gpu', help='which gpu to run on', choices=[0, 1], type=int, default=int(0))
     args = parser.parse_args()
 
 
@@ -108,7 +114,10 @@ def main():
     seed = int(time.time())
 
     train(args.env, num_timesteps=args.num_timesteps, seed=seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model, nenv=args.nenv, ent_coef=args.ent_coef, initial_lr=args.initial_lr) #, logdir=args.logdir, render=args.render,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms,
+          loadModel=args.model, nenv=args.nenv,
+          ent_coef=args.ent_coef, initial_lr=args.initial_lr,
+          gpu=args.gpu) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':

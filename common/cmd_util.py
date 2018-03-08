@@ -72,3 +72,17 @@ def load_model(modelPath):
     print('finished loading model')
 
     return ob_rms, ret_rms
+
+def make_env(env_id, earlyTerminationTime_ms, rank, seed):
+    import gym
+    from baselines.bench import Monitor
+    from Redbird_AI.common.rb_monitor import RB_Monitor
+    import os
+
+    env = gym.make(env_id)
+    env.seed(seed + 1000 * rank)
+    env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
+    # env = bench.Monitor(env, logger.get_dir())
+    env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+    env = RB_Monitor(env)
+    return env

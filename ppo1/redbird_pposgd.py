@@ -36,6 +36,7 @@ class RedbirdPposgd():
         ep_num = 0
         ep_rets = [] # returns of completed episodes in this segment
         ep_lens = [] # lengths of ...
+        epinfo = []
 
         # Initialize history arrays
         obs = np.array([ob for _ in range(horizon)])
@@ -61,7 +62,7 @@ class RedbirdPposgd():
             if t > 0 and t % horizon == 0:
                 yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
                         "ac" : acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
-                        "ep_rets" : ep_rets, "ep_lens" : ep_lens}
+                        "ep_rets" : ep_rets, "ep_lens" : ep_lens, "epinfo": epinfo}
                 # Be careful!!! if you change the downstream algorithm to aggregate
                 # several of these batches, then be sure to do a deepcopy
                 ep_rets = []
@@ -75,9 +76,11 @@ class RedbirdPposgd():
 
             ac = np.expand_dims(ac, 0)
             ob, rew, new, info = env.step(ac)
+            maybeepinfo = info[0].get('episode')
+            if maybeepinfo:
+                epinfo.append(maybeepinfo)
 
 
-            # rew = rew * REWARD_SCALE  # ben
             rews[i] = rew
             cur_ep_ret += rew
             cur_ep_len += 1
@@ -90,11 +93,11 @@ class RedbirdPposgd():
 
             if new:
                 ep_num += 1
-                if self.rank == 0:
-                    for rew_name, rew in info[0]["rews"].items():
-                        logger.logkv(rew_name, rew)
-                    logger.logkv("rew", cur_ep_ret)
-                    logger.dumpkvs()
+                # if self.rank == 0:
+                #     for rew_name, rew in info[0]["rews"].items():
+                #         logger.logkv(rew_name, rew)
+                #     logger.logkv("rew", cur_ep_ret)
+                #     logger.dumpkvs()
 
                 ep_rets.append(cur_ep_ret)
                 ep_lens.append(cur_ep_len)
@@ -159,8 +162,8 @@ class RedbirdPposgd():
             nact = np.sum(ac_space.nvec)
         except:
             nact = ac_space.shape[0]*2
-        pi = policy(ob, tf.get_default_session(), nact,  ac_space, reuse=False)
-        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, reuse=True)
+        pi = policy(ob, tf.get_default_session(), nact,  ac_space, reuse=False, name = "pi")
+        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, reuse=False, name="oldpi")
         ac = pi.pdtype.sample_placeholder([None])
 
         OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
@@ -193,7 +196,8 @@ class RedbirdPposgd():
         adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
         assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
-            for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
+            for (oldv, newv) in zipsame(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "oldpi"),
+                                        tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, "pi"))])
         compute_losses = U.function([ob, ac, atarg, ret, lrmult, OLDVPRED, CLIPRANGE], losses)
 
         U.initialize()
@@ -323,6 +327,11 @@ class RedbirdPposgd():
                     if len(seg['ep_rets']) > 0:
                         logger.logkv('eprewmean', safemean(seg['ep_rets']))
                         logger.logkv('eplenmean', safemean(seg["ep_lens"]))
+                        logger.logkv('game_reward', safemean(list(seg['epinfo'][i]['game'] for i in range(seg['epinfo'].__len__()))))
+                        logger.logkv('direction_reward', safemean(list(seg['epinfo'][i]['direction'] for i in range(seg['epinfo'].__len__()))))
+                        logger.logkv('selection_reward', safemean(list(seg['epinfo'][i]['selection'] for i in range(seg['epinfo'].__len__()))))
+                        logger.logkv('end_reward', safemean(list(seg['epinfo'][i]['end'] for i in range(seg['epinfo'].__len__()))))
+
                     logger.logkv('time_elapsed', tnow - tfirststart)
                     for (lossval, lossname) in zip(meanlosses, loss_names):
                         logger.logkv(lossname, lossval)

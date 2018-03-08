@@ -11,10 +11,9 @@ from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 import sys
 sys.path.append('/home/bcstri01/env2/Redbird_AI')
 sys.path.append('/home/bcstri01/env2')
-from Redbird_AI.common.cmd_util import iarc_arg_parser
+from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env
 from Redbird_AI.ppo1.redbird_pposgd import RedbirdPposgd
 from Redbird_AI.common.policies import MlpPolicy3, MlpPolicy4
-from Redbird_AI.common.monitor import Monitor
 
 def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTermT_ms, ent_coef, initial_lr=2.5e-4):
     import baselines.common.tf_util as U
@@ -50,18 +49,19 @@ def train(env_id, num_timesteps, seed, kind, logdir, render, loadModel, earlyTer
     # env = gym.make(env_id)
     # env = VecNormalize(env)
 
-    #begin mujoco style
-    def make_env():
-
-        from baselines import bench
-        env = gym.make(env_id)
-        env.seed(seed+ 10000*rank)
-        env.env.earlyTerminationTime_ms = earlyTermT_ms
-        env = Monitor(env, logger.get_dir())
-        # env = Monitor(env, logger.get_dir())
+    # #begin mujoco style
+    def make_env_fn():
+        env = make_env(env_id, earlyTermT_ms, 0, seed)
         return env
-
-    env = DummyVecEnv([make_env])
+    #
+    #     from baselines import bench
+    #     env = gym.make(env_id)
+    #     env.seed(seed+ 10000*rank)
+    #     env.env.earlyTerminationTime_ms = earlyTermT_ms
+    #     env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+    #     env = RB_Monitor(env)
+    #     return env
+    env = DummyVecEnv([make_env_fn])
     env.num_envs = 1
     env = VecNormalize(env,ret=True)
     set_global_seeds(seed)

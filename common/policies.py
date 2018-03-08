@@ -7,8 +7,8 @@ import numpy as np
 
 class MlpPolicy3(object):
 
-    def __init__(self, X, sess, nact,  ac_space, reuse=False):
-        with tf.variable_scope("model", reuse=reuse):
+    def __init__(self, X, sess, nact,  ac_space,  reuse=False, name="model"):
+        with tf.variable_scope(name, reuse=reuse):
             ob = X
             l1 = tf.layers.dense(inputs=ob, units=512 , activation=tf.nn.tanh, name="l1")
             tf.summary.histogram(l1.name, l1)
