@@ -63,12 +63,12 @@ def load_model(modelPath):
             print("found " + vars.name)
         except:
             print("couldn't find " + vars.name)
-    try:
-        with open(modelPath + '.pik', 'rb') as f:
-            ob_rms, ret_rms = pickle.load(f)
-        print('found observation scaling')
-    except:
-        print('could not find observation scaling')
+
+    with open(modelPath + '.pik', 'rb') as f:
+        ob_rms, ret_rms = pickle.load(f)
+    print('found observation scaling')
+
+
     print('finished loading model')
 
     return ob_rms, ret_rms

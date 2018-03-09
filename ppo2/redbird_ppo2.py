@@ -103,10 +103,41 @@ class Runner(object):
         self.dones = [False for _ in range(nenv)]
 
     def run(self):
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        # mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        # mb_states = self.states
+        # epinfos = []
+        # tmp_rewards = 0
+        # tmp_dones = [np.array([False for _ in range(self.env.num_envs)])]
+        model_step_rate = 5
+        # for i in range(self.nsteps*model_step_rate):
+        #     if (i % model_step_rate == 0):
+        #         actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
+        #         mb_obs.append(self.obs.copy())
+        #         mb_actions.append(actions)
+        #         mb_values.append(values)
+        #         mb_neglogpacs.append(neglogpacs)
+        #         dones = tmp_dones[0]
+        #         for steps in tmp_dones[1:]:
+        #             dones = np.logical_or(dones, steps)
+        #         mb_dones.append(dones)
+        #         tmp_dones = []
+        #     self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+        #     tmp_rewards += rewards
+        #     tmp_dones.append(self.dones)
+        #     for info in infos:
+        #
+        #         maybeepinfo = info.get('episode')
+        #         if maybeepinfo:
+        #             epinfos.append(maybeepinfo)
+        #     if (i % model_step_rate == 0):
+        #         mb_rewards.append(tmp_rewards)
+        #         tmp_rewards=0
+        # mb_rewards[-1] += tmp_rewards
+        # for steps in tmp_dones:
+        #     mb_dones[-1] = np.logical_or(dones, steps)
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
         epinfos = []
-        #rews = []
         for _ in range(self.nsteps):
             actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
             mb_obs.append(self.obs.copy())
@@ -115,16 +146,9 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-
             for info in infos:
-
                 maybeepinfo = info.get('episode')
-                if maybeepinfo:
-                    epinfos.append(maybeepinfo)
-               # mayberewsinfo = info.get('rews')
-               # if mayberewsinfo : rews.append(mayberewsinfo)
-
-            #rews.append(sum(list(Counter(info.get('rews')) for info in infos)))
+                if maybeepinfo: epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -252,7 +276,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
             logger.logkv('direction_reward', safemean([epinfo['direction'] for epinfo in epinfobuf]))
-            logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
+            # logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
             logger.logkv('end_reward', safemean([epinfo['end'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
             for (lossval, lossname) in zip(lossvals, model.loss_names):

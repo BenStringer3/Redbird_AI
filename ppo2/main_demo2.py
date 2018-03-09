@@ -12,17 +12,18 @@ import tensorflow as tf
 import gym
 from baselines.common import set_global_seeds
 from Redbird_AI.common.cmd_util import iarc_arg_parser, load_model
-import numpy as np
+import time
 
-def demo(*, policy, env, nsteps, loadModel=None, render=False):
+def demo(*, policy, env, nsteps, loadModel=None, render=False, gpu=0):
     ob_space = env.observation_space
     ac_space = env.action_space
 
-    make_model = lambda: Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=1, nbatch_train=nsteps,
-                               nsteps=nsteps, ent_coef=0.01, vf_coef=0.5,
+    with tf.device('/device:GPU:' + str(gpu)):
+        make_model = lambda: Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=1, nbatch_train=nsteps,
+                               nsteps=nsteps,  vf_coef=0.5,
                                max_grad_norm=0.5)
 
-    model = make_model()
+        model = make_model()
     if loadModel is not None:
         env.ob_rms, env.ret_rms = load_model(loadModel)
         #load(loadModel)
@@ -44,7 +45,8 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False):
             # ob = np.expand_dims(ob, 0)
             actions, values, states, neglogpacs = model.step(ob, states, done)
             ob, rew, done, info = env.step(actions)
-            env.render()
+            # env.render()
+
 
     env.close()
     # for update in range(1, 100):
@@ -52,7 +54,7 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False):
     #
     # env.close()
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, render):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, render, gpu=0):
     from baselines.bench import Monitor
     import os
     from baselines.common.vec_env.vec_normalize import VecNormalize
@@ -81,6 +83,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
         env = gym.make(env_id)
         env.seed(seed)
         env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
+        env.env.render_bool = True
         # env = bench.Monitor(env, logger.get_dir())
         # env = Monitor(env, logger.get_dir())
         return env
@@ -96,25 +99,20 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     # env = VecNormalize(env)
 
     policy = {'MlpPolicy3' : MlpPolicy3}[policy]
-    demo(policy=policy, env=env, nsteps=128, loadModel=loadModel,render=render)
+    demo(policy=policy, env=env, nsteps=128, loadModel=loadModel,render=render, gpu=gpu)
 
-def str2bool(v):
-    import argparse
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
 def main():
     parser = iarc_arg_parser()
+    parser.add_argument('--gpu', help='which gpu to run on', choices=[0, 1], type=int, default=int(0))
+
     args = parser.parse_args()
-    args = parser.parse_args()
+
     logger.configure('/tmp/main_demo2_logdir/')
 
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model,render=True) #, logdir=args.logdir, render=args.render,
+          policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms, loadModel=args.model,render=True, gpu=args.gpu) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':
