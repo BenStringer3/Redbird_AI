@@ -37,8 +37,7 @@ def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs
     ret= SubprocVecEnv(envs)
     return ret
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0):
-    from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0, anneal_ent_coef=0):
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
@@ -54,17 +53,8 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     def make_env_fn(rank):
         def _thunk():
             env = make_env(env_id, earlyTerminationTime_ms, rank, seed)
-        #     from baselines import bench
-        #     env = gym.make(env_id)
-        #     env.seed(seed + 1000*rank)
-        #     env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
-        #     # env = bench.Monitor(env, logger.get_dir())
-        #     env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-        #     env = RB_Monitor(env)
             return env
         return _thunk
-    # env = DummyVecEnv([make_env])
-    # env = VecNormalize(env)
     set_global_seeds(seed)
     #end mujoco style
 
@@ -74,11 +64,14 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5}[policy]
 
-    # env = VecFrameStack(make_IARC_env(env_id, 8, seed, earlyTerminationTime_ms), 4)
+    if anneal_ent_coef==0:
+        entropy_coef = ent_coef
+    elif anneal_ent_coef==1:
+        entropy_coef = lambda f : f*ent_coef
 
     learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
-        ent_coef=lambda f : f*ent_coef,
+        ent_coef=entropy_coef,
         lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
@@ -98,6 +91,7 @@ def main():
     parser = iarc_arg_parser()
     parser.add_argument('--nenv', help='Number of environments to run',type = int, default=int(5))
     parser.add_argument('--gpu', help='which gpu to run on', choices=[0, 1], type=int, default=int(0))
+    parser.add_argument('--anneal_ent_coef', help='Do you want to anneal entropy coefficient?', choices=[0, 1], type=int, default=int(0))
     args = parser.parse_args()
 
 
@@ -117,7 +111,7 @@ def main():
           policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms,
           loadModel=args.model, nenv=args.nenv,
           ent_coef=args.ent_coef, initial_lr=args.initial_lr,
-          gpu=args.gpu) #, logdir=args.logdir, render=args.render,
+          gpu=args.gpu, anneal_ent_coef=args.anneal_ent_coef) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
 if __name__ == '__main__':
