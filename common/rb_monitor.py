@@ -23,3 +23,6 @@ class RB_Monitor(Wrapper):
                 info['episode'] = dict(info['episode'], **rewinfo)
         return (ob, rew, done, info)
 
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
