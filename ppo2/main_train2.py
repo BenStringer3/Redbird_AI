@@ -4,43 +4,18 @@ sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
 
 from baselines import logger
 from Redbird_AI.ppo2.redbird_ppo2 import learn
-from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, MlpPolicy5
+from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, MlpPolicy5, LstmPolicy
 import multiprocessing
 import tensorflow as tf
-import gym
 from baselines.common import set_global_seeds
-from Redbird_AI.common.rb_monitor import RB_Monitor
-from baselines.bench import Monitor
 from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env
 import os
 
 
-def make_IARC_env(env_id, num_env, seed, earlyTerminationTime_ms, wrapper_kwargs=None, start_index=0):
-    import gym
-    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-
-    """
-    Create a wrapped, monitored SubprocVecEnv for Atari.
-    """
-    if wrapper_kwargs is None: wrapper_kwargs = {}
-    def make_env(rank): # pylint: disable=C0111
-        def _thunk():
-            env = gym.make(env_id)
-            env.seed(seed + 1000*rank)
-            env.env.earlyTerminationTime_ms = earlyTerminationTime_ms
-            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
-            env = RB_Monitor(env)
-            return env
-        return _thunk
-    set_global_seeds(seed)
-    envs = [make_env(i + start_index) for i in range(num_env)]
-    ret= SubprocVecEnv(envs)
-    return ret
-
 def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0, anneal_ent_coef=0):
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-
+    os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu)
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
     config = tf.ConfigProto(allow_soft_placement=True,
@@ -60,16 +35,16 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     envs = [make_env_fn(i) for i in range(nenv)]
     env = SubprocVecEnv(envs)
-    env = VecNormalize(env, ret=False)
+    env = VecNormalize(env, ret=True)
 
-    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5}[policy]
+    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5, 'LstmPolicy': LstmPolicy}[policy]
 
     if anneal_ent_coef==0:
         entropy_coef = ent_coef
     elif anneal_ent_coef==1:
         entropy_coef = lambda f : f*ent_coef
 
-    learn(policy=policy, env=env, nsteps=128, nminibatches=4,
+    learn(policy=policy, env=env, nsteps=128, nminibatches=10,
         lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
         ent_coef=entropy_coef,
         lr=lambda f : f * initial_lr,
