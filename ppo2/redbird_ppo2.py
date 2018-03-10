@@ -19,18 +19,18 @@ class Model(object):
             nact = np.sum(ac_space.nvec)
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
-            act_model = policy( X, sess, nact, ac_space, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+            act_model = policy( X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
             X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
-            train_model = policy( X, sess, nact, ac_space, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
+            train_model = policy( X, sess, nact, ac_space, nbatch_train, nsteps,nlstm=512, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
             A = train_model.pdtype.sample_placeholder([None])
             ADV = tf.placeholder(tf.float32, [None])
             R = tf.placeholder(tf.float32, [None])
             OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
             OLDVPRED = tf.placeholder(tf.float32, [None])
-            LR = tf.placeholder(tf.float32, [])
-            ENT_COEFF = tf.placeholder(tf.float32, [])
-            CLIPRANGE = tf.placeholder(tf.float32, [])
+            LR = tf.placeholder(tf.float32, [], name="LR")
+            ENT_COEFF = tf.placeholder(tf.float32, [], name="ENT_COEFF")
+            CLIPRANGE = tf.placeholder(tf.float32, [], name="CLIPRANGE")
 
             neglogpac = train_model.pd.neglogp(A)
             entropy = tf.reduce_mean(train_model.pd.entropy(),name="entropy")
@@ -103,38 +103,6 @@ class Runner(object):
         self.dones = [False for _ in range(nenv)]
 
     def run(self):
-        # mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        # mb_states = self.states
-        # epinfos = []
-        # tmp_rewards = 0
-        # tmp_dones = [np.array([False for _ in range(self.env.num_envs)])]
-        model_step_rate = 5
-        # for i in range(self.nsteps*model_step_rate):
-        #     if (i % model_step_rate == 0):
-        #         actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
-        #         mb_obs.append(self.obs.copy())
-        #         mb_actions.append(actions)
-        #         mb_values.append(values)
-        #         mb_neglogpacs.append(neglogpacs)
-        #         dones = tmp_dones[0]
-        #         for steps in tmp_dones[1:]:
-        #             dones = np.logical_or(dones, steps)
-        #         mb_dones.append(dones)
-        #         tmp_dones = []
-        #     self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-        #     tmp_rewards += rewards
-        #     tmp_dones.append(self.dones)
-        #     for info in infos:
-        #
-        #         maybeepinfo = info.get('episode')
-        #         if maybeepinfo:
-        #             epinfos.append(maybeepinfo)
-        #     if (i % model_step_rate == 0):
-        #         mb_rewards.append(tmp_rewards)
-        #         tmp_rewards=0
-        # mb_rewards[-1] += tmp_rewards
-        # for steps in tmp_dones:
-        #     mb_dones[-1] = np.logical_or(dones, steps)
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
         epinfos = []
@@ -258,7 +226,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     mbflatinds = flatinds[mbenvinds].ravel()
                     slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
                     mbstates = states[mbenvinds]
-                    mblossvals.append(model.train(lrnow, cliprangenow, *slices, mbstates))
+                    mblossvals.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now, mbstates))
 
         lossvals = np.mean(mblossvals, axis=0)
         tnow = time.time()
@@ -284,15 +252,6 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.dumpkvs()
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
             save_model(update, env.ob_rms, env.ret_rms)
-            # checkdir = osp.join(logger.get_dir(), 'checkpoints')
-            # os.makedirs(checkdir, exist_ok=True)
-            # savepath = osp.join(checkdir, '%.5i.ckpt'%update)
-            # print('Saving to', savepath)
-            # model.save(savepath)
-            # import pickle
-            # data = env.ob_rms
-            # with open(osp.join(checkdir, '%.5i.pik'%update), 'wb') as f:
-            #     pickle.dump([env.ob_rms, env.ret_rms], f, -1)
     env.close()
 
 def safemean(xs):
