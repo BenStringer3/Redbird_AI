@@ -6,7 +6,7 @@ from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from redbird_ppo2 import learn, Runner, Model
-from Redbird_AI.common.policies import  MlpPolicy3
+from Redbird_AI.common.policies import  MlpPolicy3, LstmPolicy
 import multiprocessing
 import tensorflow as tf
 import gym
@@ -39,9 +39,9 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False, gpu=0):
 
     for i in range(25):
         ob = env.reset()
-        done = False
-        states= None
-        while not done:
+        done = [False]
+        states= model.initial_state
+        while not any(done):
             # ob = np.expand_dims(ob, 0)
             actions, values, states, neglogpacs = model.step(ob, states, done)
             ob, rew, done, info = env.step(actions)
@@ -98,7 +98,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     # env = SubprocVecEnv(envs)
     # env = VecNormalize(env)
 
-    policy = {'MlpPolicy3' : MlpPolicy3}[policy]
+    policy = {'MlpPolicy3' : MlpPolicy3, 'LstmPolicy':LstmPolicy}[policy]
     demo(policy=policy, env=env, nsteps=128, loadModel=loadModel,render=render, gpu=gpu)
 
 

@@ -8,7 +8,7 @@ from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
 from Redbird_AI.common.cmd_util import load_model, save_model
-from collections import Counter
+from gym import spaces
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
@@ -16,7 +16,11 @@ class Model(object):
         sess = tf.get_default_session()
 
         with tf.device('/device:GPU:'+ str(gpu)):
-            nact = np.sum(ac_space.nvec)
+            if isinstance(ac_space, spaces.Box):
+                nact = np.sum(ac_space.shape) *2
+            else:
+                nact = np.sum(ac_space.nvec)
+
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
             act_model = policy( X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)

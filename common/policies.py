@@ -221,7 +221,7 @@ class LstmPolicy(object):
         from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm, fc
         nenv = nbatch // nsteps
 
-        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
+        M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
         S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
 
         with tf.variable_scope(name, reuse=reuse):
