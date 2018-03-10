@@ -7,7 +7,7 @@ import numpy as np
 
 class MlpPolicy3(object):
 
-    def __init__(self, X, sess, nact,  ac_space,  reuse=False, name="model"):
+    def __init__(self, X, sess, nact, ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
         with tf.variable_scope(name, reuse=reuse):
             ob = X
             l1 = tf.layers.dense(inputs=ob, units=512 , activation=tf.nn.tanh, name="l1")
@@ -71,6 +71,7 @@ class MlpPolicy3(object):
         self.step = step
         self.value = value
 
+#pruning experiment
 class MlpPolicy4(object):
 
     def _dense(self, x, size, name, weight_init=None, bias=True):
@@ -125,7 +126,7 @@ class MlpPolicy4(object):
         self.step = step
         self.value = value
 
-#not yet supported
+#not yet supported (block sparse gpu kernels experiment)
 class MlpPolicy5(object):
 
     def _sparse(self, inputs, units, name, weight_init=None, bias=True):
@@ -209,6 +210,47 @@ class MlpPolicy5(object):
             def value(ob, *_args, **_kwargs):
                 return sess.run(vf, {X: ob})
         self.X = X
+        self.pi = pi
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+class LstmPolicy(object):
+    # (self, X, sess, nact,  ac_space,  reuse=False, name="model"):
+    def __init__(self, X, sess, nact, ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
+        from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm, fc
+        nenv = nbatch // nsteps
+
+        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
+        S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
+
+        with tf.variable_scope(name, reuse=reuse):
+            ob = X
+            l1 = tf.layers.dense(inputs=ob, units=512, activation=tf.nn.tanh, name="l1")
+            l2 = tf.layers.dense(inputs=l1, units=512, activation=tf.nn.tanh, name="l2")
+            xs = batch_to_seq(l2, nenv, nsteps)
+            ms = batch_to_seq(M, nenv, nsteps)
+            h5, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
+            h5 = seq_to_batch(h5)
+            pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+            vf = tf.layers.dense(h5, 1, name="value", activation=None, kernel_initializer=U.normc_initializer(1.0))[:, 0]
+
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pi)
+
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
+
+        def step(ob, state, mask):
+            return sess.run([a0, vf, snew, neglogp0], {X:ob, S:state, M:mask})
+
+        def value(ob, state, mask):
+            return sess.run(vf, {X:ob, S:state, M:mask})
+
+        self.X = X
+        self.M = M
+        self.S = S
         self.pi = pi
         self.vf = vf
         self.step = step
