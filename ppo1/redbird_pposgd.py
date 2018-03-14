@@ -162,8 +162,8 @@ class RedbirdPposgd():
             nact = np.sum(ac_space.nvec)
         except:
             nact = ac_space.shape[0]*2
-        pi = policy(ob, tf.get_default_session(), nact,  ac_space, reuse=False, name = "pi")
-        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, reuse=False, name="oldpi")
+        pi = policy(ob, tf.get_default_session(), nact,  ac_space, timesteps_per_actorbatch//optim_batchsize, timesteps_per_actorbatch, nlstm=512, reuse=False, name = "pi")
+        oldpi = policy(ob, tf.get_default_session(), nact, ac_space, timesteps_per_actorbatch//optim_batchsize, timesteps_per_actorbatch, nlstm=512, reuse=False, name="oldpi")
         ac = pi.pdtype.sample_placeholder([None])
 
         OLDVPRED = tf.placeholder(tf.float32, [None],name = "OLDVPRED") # from ppo2
