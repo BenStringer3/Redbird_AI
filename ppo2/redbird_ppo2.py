@@ -8,7 +8,7 @@ from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
 from Redbird_AI.common.cmd_util import load_model, save_model
-from collections import Counter
+from gym import spaces
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
@@ -16,7 +16,11 @@ class Model(object):
         sess = tf.get_default_session()
 
         with tf.device('/device:GPU:'+ str(gpu)):
-            nact = np.sum(ac_space.nvec)
+            if isinstance(ac_space, spaces.Box):
+                nact = np.sum(ac_space.shape) *2
+            else:
+                nact = np.sum(ac_space.nvec)
+
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
 
             act_model = policy( X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
@@ -60,6 +64,11 @@ class Model(object):
             trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
             _train = trainer.apply_gradients(grads)
 
+            summaries = tf.summary.merge_all()
+            writer = tf.summary.FileWriter(logger.get_dir())
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, ent_coeff, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
@@ -69,11 +78,14 @@ class Model(object):
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
             stuff =  sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],#, summaries],
-                td_map
+                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, summaries, _train],
+                td_map #, options=run_options, run_metadata=run_metadata
             )[:-1]
-            # logger.Logger.CURRENT.writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.step)
-            return stuff #[:-1]
+            writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
+            #writer.add_run_metadata(run_metadata, 'step%d' % logger.Logger.CURRENT.output_formats[0].step)
+            writer.flush()
+            # logger.Logger.CURRENT.output_formats[0].writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
+            return stuff[:-1]
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         self.train = train
@@ -240,12 +252,17 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv("explained_variance", float(ev))
             logger.logkv("lr", float(lrnow))
             logger.logkv("ent_coef", float(ent_coeff_now))
-            logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-            logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
-            logger.logkv('direction_reward', safemean([epinfo['direction'] for epinfo in epinfobuf]))
-            # logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
-            logger.logkv('end_reward', safemean([epinfo['end'] for epinfo in epinfobuf]))
+            try:
+                for key in epinfobuf[0].keys():
+                    logger.logkv(key, safemean([epinfo[key] for epinfo in epinfobuf]))
+            except:
+                print("bummer") #TODO: cleanup
+            # logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+            # logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+            # logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
+            # logger.logkv('direction_reward', safemean([epinfo['direction'] for epinfo in epinfobuf]))
+            # # logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
+            # logger.logkv('end_reward', safemean([epinfo['end'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv(lossname, lossval)

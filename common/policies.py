@@ -5,6 +5,7 @@ from baselines.common import tf_util as U
 from gym import spaces
 import numpy as np
 import math
+import os
 
 class MlpPolicy3(object):
 
@@ -31,41 +32,20 @@ class MlpPolicy3(object):
             # vf = plain_dense(l4_v, 1, "value", U.normc_initializer(1.0))[:, 0]
             vf = tf.layers.dense(l4, 1, name="value", kernel_initializer=U.normc_initializer(1.0))[:, 0]
 
-        if isinstance(ac_space, spaces.Dict):
-            self.pdtype0 = make_pdtype(ac_space.spaces["aav_pos"])
-            self.pd0 = self.pdtype0.pdfromflat(pi)
 
-            a0 = self.pd0.sample()
-            neglogp0 = self.pd0.neglogp(a0)
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pi)
 
-            self.pdtype1 = make_pdtype(ac_space.spaces["exec"])
-            self.pd1 = self.pdtype1.pdfromflat(pi)
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = None
 
-            a1 = self.pd1.sample()
-            neglogp1 = self.pd1.neglogp(a1)
+        def step(ob, *_args, **_kwargs):
+            a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
+            return a, v, self.initial_state, neglogp
 
-            self.pdtype.sample_placeholder = tf.stack([self.pdtype0.sample_placeholder([None]), tf.cast(self.pdtype1.sample_placeholder([None]), tf.float32)], axis=0)
-
-            def step(ob, *_args, **_kwargs):
-                a, v, neglogp = sess.run([[a0, a1], vf, [neglogp0, neglogp1]], {X:ob})
-                return a, v, self.initial_state, neglogp
-
-            def value(ob, *_args, **_kwargs):
-                return sess.run(vf, {X:ob})
-        else:
-            self.pdtype = make_pdtype(ac_space)
-            self.pd = self.pdtype.pdfromflat(pi)
-
-            a0 = self.pd.sample()
-            neglogp0 = self.pd.neglogp(a0)
-            self.initial_state = None
-
-            def step(ob, *_args, **_kwargs):
-                a, v, neglogp = sess.run([a0, vf, neglogp0], {X:ob})
-                return a, v, self.initial_state, neglogp
-
-            def value(ob, *_args, **_kwargs):
-                return sess.run(vf, {X:ob})
+        def value(ob, *_args, **_kwargs):
+            return sess.run(vf, {X:ob})
         self.X = X
         self.pi = pi
         self.vf = vf
@@ -218,11 +198,14 @@ class MlpPolicy5(object):
 
 class LstmPolicy(object):
     # (self, X, sess, nact,  ac_space,  reuse=False, name="model"):
+    def _kernel(self, lyr):
+        return tf.get_default_graph().get_tensor_by_name(os.path.split(lyr.name)[0] + '/kernel:0')
+
     def __init__(self, X, sess, nact, ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
         from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm, fc
-        nenv = nbatch // nsteps
+        nenv = nbatch // nsteps # 50 = 50 / 1 #
 
-        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
+        M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
         S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
 
         with tf.variable_scope(name, reuse=reuse):
@@ -233,7 +216,75 @@ class LstmPolicy(object):
             ms = batch_to_seq(M, nenv, nsteps)
             h5, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
             h5 = seq_to_batch(h5)
-            pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+            if isinstance(ac_space, spaces.Box):
+                pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(1.0))
+            else:
+                pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+            vf = tf.layers.dense(h5, 1,  activation=None, name="value", kernel_initializer=U.normc_initializer(1.0))
+
+            if not reuse:
+                tf.summary.histogram("vf_kernel", self._kernel(vf))
+                tf.summary.histogram("pi_kernel", self._kernel(pi))
+                tf.summary.histogram("lstm_kernelx", tf.get_default_graph().get_tensor_by_name("model/lstm1/wx:0"))
+                tf.summary.histogram("lstm_kernelh", tf.get_default_graph().get_tensor_by_name("model/lstm1/wh:0"))
+                tf.summary.histogram("l2_kernel", self._kernel(l2))
+                tf.summary.histogram("l1_kernel", self._kernel(l1))
+            vf = vf[:, 0]
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pi)
+
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
+
+
+
+        def step(ob, state, mask):
+            return sess.run([a0, vf, snew, neglogp0], {X:ob, S:state, M:mask})
+
+        def value(ob, state, mask):
+            return sess.run(vf, {X:ob, S:state, M:mask})
+
+        self.X = X
+        self.M = M
+        self.S = S
+        self.pi = pi
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+
+NUM_RMBAS=10
+class LstmPolicy2(object):
+
+    def __init__(self, X, sess, nact, ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
+        from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm, fc
+        nenv = nbatch // nsteps
+
+        M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
+        S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
+
+        M2 = tf.placeholder(tf.float32, [nbatch], name="M2") #mask (done t-1)
+        S2 = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
+
+        with tf.variable_scope(name, reuse=reuse):
+            with tf.variable_scope("lstmInputs", reuse=reuse):
+                xs2 = batch_to_seq(X, nenv, NUM_RMBAS)
+                ms2 = batch_to_seq(M, nenv, NUM_RMBAS)
+                h6, snew2 = lstm(xs2, ms2, S2, 'lstm2', nh=nlstm)
+                h6 = seq_to_batch(h6)
+
+            l1 = tf.layers.dense(inputs=h6, units=512, activation=tf.nn.tanh, name="l1")
+            l2 = tf.layers.dense(inputs=l1, units=512, activation=tf.nn.tanh, name="l2")
+            xs = batch_to_seq(l2, nenv, nsteps)
+            ms = batch_to_seq(M, nenv, nsteps)
+            h5, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
+            h5 = seq_to_batch(h5)
+            if isinstance(ac_space, spaces.Box):
+                pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.3))
+            else:
+                pi = tf.layers.dense(h5, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+
             vf = tf.layers.dense(h5, 1, name="value", activation=None, kernel_initializer=U.normc_initializer(1.0))[:, 0]
 
         self.pdtype = make_pdtype(ac_space)
@@ -244,6 +295,10 @@ class LstmPolicy(object):
         self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
 
         def step(ob, state, mask):
+            for i in range(NUM_RMBAS):
+                rmba = ob[i*4:i*4+4]
+                state2 = -np.ones([40])
+                # ob, state2 = sess.run([h6, snew2], {X:rmba, S2:state2, M2:})
             return sess.run([a0, vf, snew, neglogp0], {X:ob, S:state, M:mask})
 
         def value(ob, state, mask):

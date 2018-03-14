@@ -12,7 +12,7 @@ from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env
 import os
 
 
-def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0, anneal_ent_coef=0):
+def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0, anneal_ent_coef=0, debug=False):
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
     os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu)
@@ -22,7 +22,11 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
                             intra_op_parallelism_threads=ncpu,
                             inter_op_parallelism_threads=ncpu)
     config.gpu_options.allow_growth = True #pylint: disable=E1101
-    tf.Session(config=config).__enter__()
+    if debug:
+        from tensorflow.python import debug as tf_debug
+        tf_debug.LocalCLIDebugWrapperSession(tf.Session(config=config).__enter__())
+    else:
+        tf.Session(config=config).__enter__()
 
     #begin mujoco style
     def make_env_fn(rank):
@@ -50,7 +54,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
         lr=lambda f : f * initial_lr,
         cliprange=lambda f : f * 0.1,
         total_timesteps=int(num_timesteps * 1.1),
-        save_interval=500, loadModel=loadModel,
+        save_interval=100, loadModel=loadModel,
           gpu=gpu)
 
 def str2bool(v):
