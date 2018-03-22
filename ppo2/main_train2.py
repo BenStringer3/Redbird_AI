@@ -8,7 +8,7 @@ from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, MlpPolicy5, Lstm
 import multiprocessing
 import tensorflow as tf
 from baselines.common import set_global_seeds
-from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env
+from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env, save_model
 import os
 
 
@@ -29,7 +29,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
         tf.Session(config=config).__enter__()
 
     #begin mujoco style
-    def make_env_fn(rank):
+    def make_env_fn(rank, env_id):
         def _thunk():
             env = make_env(env_id, earlyTerminationTime_ms, rank, seed)
             return env
@@ -37,7 +37,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     set_global_seeds(seed)
     #end mujoco style
 
-    envs = [make_env_fn(i) for i in range(nenv)]
+    envs = [make_env_fn(i, env_id) for i in range(nenv)]
     env = SubprocVecEnv(envs)
     env = VecNormalize(env, ret=True)
 
@@ -48,14 +48,22 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     elif anneal_ent_coef==1:
         entropy_coef = lambda f : f*ent_coef
 
-    learn(policy=policy, env=env, nsteps=128, nminibatches=10,
-        lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
-        ent_coef=entropy_coef,
-        lr=lambda f : f * initial_lr,
-        cliprange=lambda f : f * 0.1,
-        total_timesteps=int(num_timesteps * 1.1),
-        save_interval=100, loadModel=loadModel,
-          gpu=gpu)
+    try:
+        learn(policy=policy, env=env, nsteps=128, nminibatches=10,
+            lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
+            ent_coef=entropy_coef,
+            lr=lambda f : f * initial_lr,
+            cliprange=lambda f : f * 0.1,
+            total_timesteps=int(num_timesteps * 1.1),
+            save_interval=500, loadModel=loadModel,
+              gpu=gpu)
+    except KeyboardInterrupt:
+        print('keyboard interrupt triggered. Attempting clean exit')
+        save_model('final', env.ob_rms, env.ret_rms)
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
 
 def str2bool(v):
     import argparse
@@ -85,7 +93,6 @@ def main():
 
     import time
     seed = int(time.time())
-
     train(args.env, num_timesteps=args.num_timesteps, seed=seed,
           policy=args.policy, earlyTerminationTime_ms=args.earlyTermT_ms,
           loadModel=args.model, nenv=args.nenv,
@@ -93,5 +100,7 @@ def main():
           gpu=args.gpu, anneal_ent_coef=args.anneal_ent_coef) #, logdir=args.logdir, render=args.render,
           # newModel=args.newModel, earlyTermT_ms=args.earlyTermT_ms)
 
+
+
 if __name__ == '__main__':
-    main()
+        main()
