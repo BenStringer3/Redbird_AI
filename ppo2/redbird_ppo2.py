@@ -22,7 +22,6 @@ class Model(object):
                 nact = np.sum(ac_space.nvec)
 
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
-
             act_model = policy( X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
             X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
             train_model = policy( X, sess, nact, ac_space, nbatch_train, nsteps,nlstm=512, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
@@ -64,8 +63,8 @@ class Model(object):
             trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
             _train = trainer.apply_gradients(grads)
 
-            summaries = tf.summary.merge_all()
-            writer = tf.summary.FileWriter(logger.get_dir())
+            summaries = tf.summary.merge_all(scope="model")
+            writer = tf.summary.FileWriter(logger.get_dir() + '/mdl_sums')
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
 
@@ -77,15 +76,21 @@ class Model(object):
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
-            stuff =  sess.run(
-                [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, summaries, _train],
-                td_map #, options=run_options, run_metadata=run_metadata
-            )[:-1]
-            writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
-            #writer.add_run_metadata(run_metadata, 'step%d' % logger.Logger.CURRENT.output_formats[0].step)
-            writer.flush()
-            # logger.Logger.CURRENT.output_formats[0].writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
-            return stuff[:-1]
+            train.counter += 1
+            if train.counter % 200 == 0: # TODO make optional arg
+                stuff =  sess.run(
+                    [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, summaries, _train],
+                    td_map #, options=run_options, run_metadata=run_metadata
+                )[:-1]
+                writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
+                writer.flush()
+                return stuff[:-1]
+            else:
+                return sess.run(
+                    [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],
+                    td_map
+                )[:-1]
+        train.counter = -1
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac', 'total_loss']
 
         self.train = train
@@ -100,9 +105,10 @@ class Model(object):
 
 class Runner(object):
 
-    def __init__(self, *, env, model, nsteps, gamma, lam):
+    def __init__(self, *, env, model, model2, nsteps, gamma, lam):
         self.env = env
         self.model = model
+        self.model2 = model2
 
         nenv = env.num_envs
 
@@ -114,10 +120,13 @@ class Runner(object):
         self.states = model.initial_state
         self.dones = [False for _ in range(nenv)]
 
-    def run(self):
+    def run(self, lrnow):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
         epinfos = []
+        genEnvLosses = []
+        imgs = []
+
         for _ in range(self.nsteps):
             actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
             mb_obs.append(self.obs.copy())
@@ -126,11 +135,20 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+            # ob_img = self.model2.step(self.obs[:]) # TODO was this necassary?
+            imgs = []
+            test_obs = []  # TODO remove test stuff
             for info in infos:
+                imgs.append(info.get("img"))
+                test_obs.append(info.get("test_ob"))
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
+            loss = self.model2.train(self.obs[:], imgs, 0.5*lrnow)  # TODO anneal lr
+            genEnvLosses.append(loss)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
+        mb_genEnvLosses = np.asarray(genEnvLosses, dtype=np.float32)
+        # mb_imgs = np.asarray(imgs, dtype=np.uint8)
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions)
@@ -154,7 +172,7 @@ class Runner(object):
         mb_returns = mb_advs + mb_values
 
         return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
+            mb_states, epinfos,  mb_genEnvLosses)
 
 # obs, returns, masks, actions, values, neglogpacs, states = runner.run()
 def sf01(arr):
@@ -192,13 +210,21 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     nsteps=nsteps, vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm, gpu=gpu)
 
+    import gym
+    from Redbird_AI.modelEnv import RevConv
+    from Redbird_AI.modelEnv import Model2
+    make_model2 = lambda : Model2(policy=RevConv, ob_space=ob_space, ac_space=gym.spaces.Box(0, 255, [64, 64]), nbatch_act=nenvs, nbatch_train=nbatch_train,
+                    nsteps=nsteps,
+                    max_grad_norm=max_grad_norm)
+
     model = make_model()
+    model2 = make_model2()
     writer = tf.summary.FileWriter(logger.get_dir() + '/tb/', tf.get_default_graph())
     writer.close()
     if loadModel is not None:
         env.ob_rms, env.ret_rms = load_model(loadModel)
 
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+    runner = Runner(env=env, model=model, model2=model2, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()
@@ -212,10 +238,12 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         lrnow = lr(frac)
         ent_coeff_now = ent_coef(frac)
         cliprangenow = cliprange(frac)
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
+        obs, returns, masks, actions, values, neglogpacs, states_agent, epinfos, lossvals_genEnv = runner.run(lrnow) #pylint: disable=E0632
         epinfobuf.extend(epinfos)
-        mblossvals = []
-        if states is None: # nonrecurrent version
+        mblossvals_agent = []
+        mblossvals_genEnv = []
+        states_genEnv = None #TODO remove this and make recurrent support genEnv
+        if states_agent is None: # nonrecurrent version
             inds = np.arange(nbatch)
             for _ in range(noptepochs):
                 np.random.shuffle(inds)
@@ -223,7 +251,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     end = start + nbatch_train
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mblossvals.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now))
+                    mblossvals_agent.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now))
         else: # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches
@@ -237,10 +265,34 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     mbenvinds = envinds[start:end]
                     mbflatinds = flatinds[mbenvinds].ravel()
                     slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
-                    mbstates = states[mbenvinds]
-                    mblossvals.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now, mbstates))
-
-        lossvals = np.mean(mblossvals, axis=0)
+                    mbstates = states_agent[mbenvinds]
+                    mblossvals_agent.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now, mbstates))
+        # if states_genEnv is None: # nonrecurrent version
+        #     inds = np.arange(nbatch)
+        #     for _ in range(noptepochs):
+        #         np.random.shuffle(inds)
+        #         for start in range(0, nbatch, nbatch_train):
+        #             end = start + nbatch_train
+        #             mbinds = inds[start:end]
+        #             slices = (arr[mbinds] for arr in (obs, tru_imgs))
+        #             mblossvals_genEnv.append(model2.train(*slices, lrnow))
+        # else: # recurrent version  #TODO make recurrent support genEnv
+        #     assert nenvs % nminibatches == 0
+        #     envsperbatch = nenvs // nminibatches
+        #     envinds = np.arange(nenvs)
+        #     flatinds = np.arange(nenvs * nsteps).reshape(nenvs, nsteps)
+        #     envsperbatch = nbatch_train // nsteps
+        #     for _ in range(noptepochs):
+        #         np.random.shuffle(envinds)
+        #         for start in range(0, nenvs, envsperbatch):
+        #             end = start + envsperbatch
+        #             mbenvinds = envinds[start:end]
+        #             mbflatinds = flatinds[mbenvinds].ravel()
+        #             slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
+        #             mbstates = states_agent[mbenvinds]
+        #             mblossvals_agent.append(model.train(lrnow, cliprangenow, *slices, ent_coeff_now, mbstates))
+        lossvals_agent = np.mean(mblossvals_agent, axis=0)
+        # lossvals_genEnv = np.mean(mblossvals_genEnv, axis=0)
         tnow = time.time()
         fps = int(nbatch / (tnow - tstart))
         if update % log_interval == 0 or update == 1:
@@ -252,19 +304,14 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             logger.logkv("explained_variance", float(ev))
             logger.logkv("lr", float(lrnow))
             logger.logkv("ent_coef", float(ent_coeff_now))
+            logger.logkv("genEnvLosses", safemean(lossvals_genEnv))
             try:
                 for key in epinfobuf[0].keys():
                     logger.logkv(key, safemean([epinfo[key] for epinfo in epinfobuf]))
             except:
                 print("bummer") #TODO: cleanup
-            # logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            # logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-            # logger.logkv('game_reward', safemean([epinfo['game'] for epinfo in epinfobuf]))
-            # logger.logkv('direction_reward', safemean([epinfo['direction'] for epinfo in epinfobuf]))
-            # # logger.logkv('selection_reward', safemean([epinfo['selection'] for epinfo in epinfobuf]))
-            # logger.logkv('end_reward', safemean([epinfo['end'] for epinfo in epinfobuf]))
             logger.logkv('time_elapsed', tnow - tfirststart)
-            for (lossval, lossname) in zip(lossvals, model.loss_names):
+            for (lossval, lossname) in zip(lossvals_agent, model.loss_names):
                 logger.logkv(lossname, lossval)
             logger.dumpkvs()
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
