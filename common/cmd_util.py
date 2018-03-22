@@ -42,13 +42,20 @@ def save_model(update_num, ob_rms, ret_rms):
 
     checkdir = osp.join(logger.get_dir(), 'checkpoints')
     os.makedirs(checkdir, exist_ok=True)
-    savepath = osp.join(checkdir, '%.5i.ckpt' % update_num)
+    if isinstance(update_num, int):
+        savepath = osp.join(checkdir, '%.5i.ckpt' % update_num)
+    else:
+        savepath = osp.join(checkdir, str(update_num) + '.ckpt')
     print('Saving to', savepath)
     os.makedirs(os.path.dirname(savepath), exist_ok=True)
     saver = tf.train.Saver(var_list=tf.global_variables())
     saver.save(tf.get_default_session(), savepath)
-    with open(osp.join(checkdir, '%.5i.pik' % update_num), 'wb') as f:
-        pickle.dump([ob_rms, ret_rms], f, -1)
+    if isinstance(update_num, int):
+        with open(osp.join(checkdir, '%.5i.pik' % update_num), 'wb') as f:
+            pickle.dump([ob_rms, ret_rms], f, -1)
+    else:
+        with open(osp.join(checkdir, str(update_num) + '.pik'), 'wb') as f:
+            pickle.dump([ob_rms, ret_rms], f, -1)
 
 def load_model(modelPath):
     import tensorflow as tf
