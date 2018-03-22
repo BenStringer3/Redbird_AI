@@ -225,8 +225,8 @@ class LstmPolicy(object):
             if not reuse:
                 tf.summary.histogram("vf_kernel", self._kernel(vf))
                 tf.summary.histogram("pi_kernel", self._kernel(pi))
-                tf.summary.histogram("lstm_kernelx", tf.get_default_graph().get_tensor_by_name("model/lstm1/wx:0"))
-                tf.summary.histogram("lstm_kernelh", tf.get_default_graph().get_tensor_by_name("model/lstm1/wh:0"))
+                tf.summary.histogram("lstm_kernelx", tf.get_default_graph().get_tensor_by_name(name + "/lstm1/wx:0"))
+                tf.summary.histogram("lstm_kernelh", tf.get_default_graph().get_tensor_by_name(name + "/lstm1/wh:0"))
                 tf.summary.histogram("l2_kernel", self._kernel(l2))
                 tf.summary.histogram("l1_kernel", self._kernel(l1))
             vf = vf[:, 0]
@@ -331,7 +331,7 @@ class RevConv(object):
         # Currently, image size must be a (power of 2) and (8 or higher).
         assert(nact & (nact - 1) == 0 and nact >= 8)
 
-        gf_dim = 64 #Dimension of gen filters in first conv layer. [64]
+        gf_dim = 4 #Dimension of gen filters in first conv layer. [64]
         log_size = int(math.log(nact) / math.log(2))
         g_bns = [
             batch_norm(name='g_bn{}'.format(i, )) for i in range(log_size)]
@@ -351,7 +351,7 @@ class RevConv(object):
                     return tf.matmul(input_, matrix) + bias
 
         def conv2d_transpose(input_, output_shape,
-                             k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
+                             k_h=6, k_w=6, d_h=2, d_w=2, stddev=0.02, #TODO: changed filter size 5 -> 3 -> 6
                              name="conv2d_transpose", with_w=False):
             with tf.variable_scope(name):
                 # filter : [height, width, output_channels, in_channels]
@@ -378,8 +378,8 @@ class RevConv(object):
 
         with tf.variable_scope(name, reuse=reuse):
             l1 = tf.layers.dense(inputs=X, units=512 , activation=tf.nn.tanh, name="l1")
-            l2 = tf.layers.dense(inputs=l1, units=512 , activation=tf.nn.tanh, name="l2")
-            z_, h0_w, h0_b = linear(l2, gf_dim * 8 * 4 * 4, 'g_h0_lin', with_w=True)
+            l2 = tf.layers.dense(inputs=l1, units=512, activation=tf.nn.tanh, name="l2")
+            z_, h0_w, h0_b = linear(X, gf_dim * 8 * 4 * 4, 'g_h0_lin', with_w=True)
             # TODO: Nicer iteration pattern here. #readability
             hs = [None]
             hs[0] = tf.reshape(z_, [-1, 4, 4, gf_dim * 8])
@@ -396,7 +396,8 @@ class RevConv(object):
                                                [nbatch, size, size, gf_dim * depth_mul], name=name,
                                                with_w=True)
                 hs[i] = tf.nn.relu(g_bns[i](hs[i], IS_TRAINING))
-
+                img = (hs[i])[0, :, :, -1]
+                tf.summary.image("img" + str(i), tf.reshape(img, [1, img.shape[0], img.shape[1], 1]))
                 i += 1
                 depth_mul //= 2
                 size *= 2
@@ -404,14 +405,19 @@ class RevConv(object):
             hs.append(None)
             name = 'g_h{}'.format(i)
             hs[i], _, _ = conv2d_transpose(hs[i - 1],
-                                           [nbatch, size, size, 3], name=name, with_w=True)
+                                           [nbatch, size, size, 1], name=name, with_w=True) #TODO channels was 3
 
-            ob_img = tf.nn.tanh(hs[i])
+
+            ob_img = tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
+            # l1 = tf.layers.dense(inputs=X, units=512, activation=tf.nn.relu, name="l1")
+            # l2 = tf.layers.dense(inputs=l1, units=1024 , activation=tf.nn.sigmoid, name="l2")
+            # ob_img = tf.reshape(l2, [nbatch, 32, 32, 1])
+
 
         def step(ob, *_args, **_kwargs):
-            return sess.run([ob_img], {X: ob, IS_TRAINING:False})
+            return sess.run(ob_img, {X: ob, IS_TRAINING:False})
 
-
+        self.initial_state = None
         self.X = X
         self.ob_img = ob_img
         self.step = step
