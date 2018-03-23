@@ -52,13 +52,13 @@ class Model2(object):
         summaries = tf.summary.merge_all(scope='images')# + tf.summary.merge_all(scope='genEnv')
         writer = tf.summary.FileWriter(logger.get_dir() + '/imgs')
 
-        def train(ob, ob_img_true, lr, masks, states=None):
+        def train(ob, ob_img_true, lr):#, masks, states=None):
 
             ob_img_true = np.array(ob_img_true)
             td_map = {train_model.IS_TRAINING:True, train_model.X:ob, OB_IMG_TRUE:ob_img_true, LR:lr }
-            if states is not None:
-                td_map[train_model.S] = states
-                td_map[train_model.M] = masks
+            # if states is not None:
+            #     td_map[train_model.S] = states
+            #     td_map[train_model.M] = masks
             train.counter += 1
             if train.counter % 200 ==  0: #TODO make optional argument
                 stuff =  sess.run([loss,  summaries, train_op],td_map)[:-1]

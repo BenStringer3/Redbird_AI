@@ -137,13 +137,16 @@ class Runner(object):
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
             # ob_img = self.model2.step(self.obs[:]) # TODO was this necassary?
             imgs = []
+            test_imgs = []
             test_obs = []  # TODO remove test stuff
             for info in infos:
                 imgs.append(info.get("img"))
                 test_obs.append(info.get("test_ob"))
+                test_imgs.append(info.get("test_img"))
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
-            loss = self.model2.train(self.obs[:], imgs, 0.5*lrnow)  # TODO anneal lr
+            # loss = self.model2.train(self.obs[:], imgs, lrnow)  # TODO anneal lr
+            loss = self.model2.train(test_obs, test_imgs, lrnow)
             genEnvLosses.append(loss)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
