@@ -63,10 +63,16 @@ class Model(object):
             trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam")
             _train = trainer.apply_gradients(grads)
 
-            summaries = tf.summary.merge_all(scope="model")
-            writer = tf.summary.FileWriter(logger.get_dir() + '/mdl_sums')
-            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            run_metadata = tf.RunMetadata()
+        #debugging/profiling
+        summaries = tf.summary.merge_all(scope="model")
+        writer = tf.summary.FileWriter(logger.get_dir() + '/mdl_sums')
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+        # Create options to profile the time and memory information.
+        builder = tf.profiler.ProfileOptionBuilder
+        opts = builder(builder.time_and_memory()).order_by('micros').build()
+
+
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, ent_coeff, states=None):
             advs = returns - values
@@ -78,7 +84,23 @@ class Model(object):
                 td_map[train_model.M] = masks
             train.counter += 1
             if train.counter % 200 == 0: # TODO make optional arg
-                stuff =  sess.run(
+                # Create a profiling context, set constructor argument `trace_steps`,
+                # `dump_steps` to empty for explicit control.
+                # with tf.contrib.tfprof.ProfileContext('/tmp/train_dir',
+                #                                       trace_steps=[],
+                #                                       dump_steps=[]) as pctx:
+                #     # with sess.as_default():
+                #     sess = tf.get_default_session()
+                #     # Enable tracing for next session.run.
+                #     pctx.trace_next_step()
+                #     # Dump the profile to '/tmp/train_dir' after the step.
+                #     pctx.dump_next_step()
+                #     stuff = sess.run(
+                #         [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, summaries, _train],
+                #         td_map  # , options=run_options, run_metadata=run_metadata
+                #     )[:-1]
+                #     pctx.profiler.profile_operations(options=opts)
+                stuff = sess.run(
                     [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, summaries, _train],
                     td_map #, options=run_options, run_metadata=run_metadata
                 )[:-1]
@@ -86,6 +108,7 @@ class Model(object):
                 writer.flush()
                 return stuff[:-1]
             else:
+                # sess = tf.get_default_session() #TODO remove if profiling doesn't work out
                 return sess.run(
                     [pg_loss, vf_loss, entropy, approxkl, clipfrac, general_loss, _train],
                     td_map
@@ -214,11 +237,11 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     max_grad_norm=max_grad_norm, gpu=gpu)
 
     import gym
-    from Redbird_AI.modelEnv import RevConv
+    from Redbird_AI.common.policies import RevConv
     from Redbird_AI.modelEnv import Model2
     import math
     make_model2 = lambda : Model2(policy=RevConv,
-                    ob_space=gym.spaces.Box(np.array([0, 0]), np.array([20.0, 20.0]), dtype=np.float32),
+                    ob_space=gym.spaces.Box(np.array([0, 0, 0, False]), np.array([20.0, 20.0, math.pi*2, True]), dtype=np.float32),
                     ac_space=gym.spaces.Box(0, 255, [64, 64]), nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=10, #TODO remove hardcode
                     max_grad_norm=max_grad_norm)

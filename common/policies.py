@@ -332,7 +332,7 @@ class RevConv(object):
         # Currently, image size must be a (power of 2) and (8 or higher).
         assert(nact & (nact - 1) == 0 and nact >= 8)
 
-        gf_dim = 32 #Dimension of gen filters in first conv layer. [64]
+        gf_dim = 64 #Dimension of gen filters in first conv layer. [64]
         log_size = int(math.log(nact) / math.log(2))
         g_bns = [
             batch_norm(name='g_bn{}'.format(i, )) for i in range(log_size)]
@@ -419,7 +419,7 @@ class RevConv(object):
                                            [nbatch, size, size, 1], name=name, with_w=True) #TODO channels was 3
 
 
-            ob_img = tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
+            ob_img = 255*tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
             # l1 = tf.layers.dense(inputs=X, units=512, activation=tf.nn.relu, name="l1")
             # l2 = tf.layers.dense(inputs=l1, units=1024 , activation=tf.nn.sigmoid, name="l2")
             # ob_img = tf.reshape(l2, [nbatch, 32, 32, 1])
@@ -440,3 +440,128 @@ class RevConv(object):
         self.step = step
         self.IS_TRAINING = IS_TRAINING
 
+class LSTM_GR_Viewer(object):
+    def __init__(self, X, sess, nact, #nact=image_size [64]
+                 ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
+        from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm
+
+        nenv = nbatch // nsteps
+        M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
+        S = tf.get_variable(name="state", shape=[nenv, nlstm*2], trainable=False )
+        LSTM = tf.get_variable(name="lstm_var", shape=[nenv, nlstm], trainable=False )
+
+        with tf.variable_scope(name, reuse=reuse):
+            xs = batch_to_seq(X, nenv, nsteps)
+            ms = batch_to_seq(M, nenv, nsteps)
+            h4, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
+            state_op = S.assign(snew)
+            h5 = seq_to_batch(h4)
+            lstm_op = LSTM.assign(h5)
+
+
+        # def step(ob, *_args, **_kwargs): #TODO this won't work for recurrent rn
+        #     return sess.run(ob_img, {X: ob, IS_TRAINING:False})
+
+        self.initial_state = -1 * np.ones((nenv, nlstm * 2), dtype=np.float32)
+        self.X = X
+        self.Y = LSTM
+        self.M = M
+        self.S = S
+        self.lstm_op = lstm_op#h5
+        self.state_op = state_op
+
+class RevConv2(object):
+    def __init__(self, X, sess, nact, #nact=image_size [64]
+                 ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
+        # Currently, image size must be a (power of 2) and (8 or higher).
+        assert(nact & (nact - 1) == 0 and nact >= 8)
+
+        gf_dim = 64 #Dimension of gen filters in first conv layer. [64]
+        log_size = int(math.log(nact) / math.log(2))
+        g_bns = [
+            batch_norm(name='g_bn{}'.format(i, )) for i in range(log_size)]
+        IS_TRAINING = tf.placeholder(tf.bool, name='is_training')
+
+        def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
+            shape = input_.get_shape().as_list()
+
+            with tf.variable_scope(scope or "Linear"):
+                matrix = tf.get_variable("Matrix", [shape[1], output_size], tf.float32,
+                                         tf.random_normal_initializer(stddev=stddev))
+                bias = tf.get_variable("bias", [output_size],
+                                       initializer=tf.constant_initializer(bias_start))
+                if with_w:
+                    return tf.matmul(input_, matrix) + bias, matrix, bias
+                else:
+                    return tf.matmul(input_, matrix) + bias
+
+        def conv2d_transpose(input_, output_shape,
+                             k_h=6, k_w=6, d_h=2, d_w=2, stddev=0.02, #TODO: changed filter size 5 -> 3 -> 6
+                             name="conv2d_transpose", with_w=False):
+            with tf.variable_scope(name):
+                # filter : [height, width, output_channels, in_channels]
+                w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
+                                    initializer=tf.random_normal_initializer(stddev=stddev))
+
+                try:
+                    deconv = tf.nn.conv2d_transpose(input_, w, output_shape=output_shape,
+                                                    strides=[1, d_h, d_w, 1])
+
+                # Support for verisons of TensorFlow before 0.7.0
+                except AttributeError:
+                    deconv = tf.nn.deconv2d(input_, w, output_shape=output_shape,
+                                            strides=[1, d_h, d_w, 1])
+
+                biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
+                # deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
+                deconv = tf.nn.bias_add(deconv, biases)
+
+                if with_w:
+                    return deconv, w, biases
+                else:
+                    return deconv
+
+        with tf.variable_scope(name, reuse=reuse):
+            z_, h0_w, h0_b = linear(X, gf_dim * 8 * 4 * 4, 'g_h0_lin', with_w=True)
+            # TODO: Nicer iteration pattern here. #readability
+            hs = [None]
+            hs[0] = tf.reshape(z_, [-1, 4, 4, gf_dim * 8])
+            hs[0] = tf.nn.relu(g_bns[0](hs[0], IS_TRAINING))
+
+            i = 1  # Iteration number.
+            depth_mul = 8  # Depth decreases as spatial component increases.
+            size = 8  # Size increases as depth decreases.
+
+            while size < nact:
+                hs.append(None)
+                name = 'g_h{}'.format(i)
+                hs[i], _, _ = conv2d_transpose(hs[i - 1],
+                                               [nbatch, size, size, gf_dim * depth_mul], name=name,
+                                               with_w=True)
+                hs[i] = tf.nn.relu(g_bns[i](hs[i], IS_TRAINING))
+                img = (hs[i])[0, :, :, -1]
+                tf.summary.image("img" + str(i), tf.reshape(img, [1, img.shape[0], img.shape[1], 1]))
+                i += 1
+                depth_mul //= 2
+                size *= 2
+
+            hs.append(None)
+            name = 'g_h{}'.format(i)
+            hs[i], _, _ = conv2d_transpose(hs[i - 1],
+                                           [nbatch, size, size, 1], name=name, with_w=True) #TODO channels was 3
+
+
+            ob_img = 255*tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
+            # l1 = tf.layers.dense(inputs=X, units=512, activation=tf.nn.relu, name="l1")
+            # l2 = tf.layers.dense(inputs=l1, units=1024 , activation=tf.nn.sigmoid, name="l2")
+            # ob_img = tf.reshape(l2, [nbatch, 32, 32, 1])
+
+
+        def step(ob, *_args, **_kwargs): #TODO this won't work for recurrent rn
+            return sess.run(ob_img, {X: ob, IS_TRAINING:False})
+
+        self.initial_state = None
+        self.X = X
+        self.Y = ob_img
+        self.step = step
+        self.IS_TRAINING = IS_TRAINING

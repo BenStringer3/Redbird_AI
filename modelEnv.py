@@ -1,7 +1,7 @@
 import gym
 from gym.utils import seeding
 import tensorflow as tf
-from Redbird_AI.common.policies import RevConv
+from Redbird_AI.common.policies import RevConv2, LSTM_GR_Viewer
 from baselines import logger
 import numpy as np
 import time
@@ -17,28 +17,36 @@ class Model2(object):
         np.random.seed(int(time.time()))
 
         with tf.device('/gpu:1'):
+            # X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X_act")
+            # act_model = policy(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name) # TODO remove hardcoded 10
+            # # X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_train")
+            # # train_model = policy(X, sess, img_size, ac_space, nbatch_train, nsteps, nlstm=512, reuse=True, name=name)
+            # #TODO: watchout, I changed this training model to be like the act model
+            # train_model = act_model
+
             X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X_act")
-            act_model = policy(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=256, reuse=False, name=name) # TODO remove hardcoded 10
-            # X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_train")
-            # train_model = policy(X, sess, img_size, ac_space, nbatch_train, nsteps, nlstm=512, reuse=True, name=name)
-            #TODO: watchout, I changed this training model to be like the act model
+            act_model = LSTM_GR_Viewer(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + '_LSTM_GR_Viewer')
+            act_model2 = RevConv2(act_model.Y, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + 'Rev_Conv')
             train_model = act_model
+            train_model2 = act_model2
 
             LR = tf.placeholder(tf.float32, [], name="LR2")
 
             OB_IMG_TRUE = tf.placeholder(
-                tf.float32, [None] + tru_img_shape, name='OB_IMG_TRUE')
+                tf.uint8, [nbatch_act] + tru_img_shape, name='OB_IMG_TRUE')
             if tru_img_shape[-1] == 3:
                 ob_img_tru = tf.image.rgb_to_grayscale(OB_IMG_TRUE)
             else:
                 ob_img_tru = OB_IMG_TRUE
             if tru_img_shape[0] != img_shape[0] or tru_img_shape[1] != img_shape[1]:
                 ob_img_tru = tf.image.resize_images(ob_img_tru, [img_size, img_size], align_corners=True, method=3)
+            ob_img_tru = tf.cast(ob_img_tru, tf.float32)
 
-            loss = tf.reduce_mean(tf.square(train_model.ob_img - ob_img_tru))
+
+            loss = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru))
             # loss = tf.reduce_mean(tf.square(act_model.ob_img - ob_img_tru))
 
-            params = tf.trainable_variables(name)
+            params = tf.trainable_variables(name)# + tf.trainable_variables(name + 'Rev_Conv')
             grads = tf.gradients(loss, params)
             if max_grad_norm is not None:
                 general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
@@ -50,7 +58,7 @@ class Model2(object):
             with tf.variable_scope("images"):
                 for i in range(3): #TODO assumes there are at lest 3 nbatch_acts
                     tf.summary.image("ob_img_tru", [ob_img_tru[i, :, :, :]])
-                    tf.summary.image("ob_img", [train_model.ob_img[i, :, :, :]])
+                    tf.summary.image("ob_img", [train_model2.Y[i, :, :, :]])
                 # tf.summary.image("ob_img", [act_model.ob_img[0, :, :, :]])
                 for grad in general_grads:
                     if grad is not None:
@@ -61,7 +69,7 @@ class Model2(object):
         def train(ob, ob_img_true, lr):#, masks, states=None):
             grs = []
             for i in range(0, 40 , 4): #TODO remove hardcoded observation separation
-                grs.append(np.array(ob)[:, i:i+2])
+                grs.append(np.array(ob)[:, i:i+4])
             # for gr in grs:
             #     td_map = {train_model.X:gr, train_model.S:states, train_model.M:masks}
             #     lstm, states = sess.run([train_model.LSTM, train_model.snew], td_map)
@@ -84,7 +92,7 @@ class Model2(object):
 
             ob_img_true = np.array(ob_img_true)
             # td_map = {train_model.IS_TRAINING:True, train_model.REV_CONV:lstm, OB_IMG_TRUE:ob_img_true, LR:lr }
-            td_map = {train_model.IS_TRAINING: np.random.random_integers(0, 1) % 2 == 0, OB_IMG_TRUE: ob_img_true, LR: lr}
+            td_map = {train_model2.IS_TRAINING: True, OB_IMG_TRUE: ob_img_true, LR: lr}
             # if states is not None:
             #     td_map[train_model.S] = states
             #     td_map[train_model.M] = masks
@@ -101,7 +109,7 @@ class Model2(object):
         self.train = train
         self.train_model = train_model #TODO uncommnet if needede
         self.act_model = act_model
-        self.step = act_model.step
+        # self.step = act_model.step
         # self.value = act_model.value
         self.initial_state = act_model.initial_state
         tf.global_variables_initializer().run(session=sess)
