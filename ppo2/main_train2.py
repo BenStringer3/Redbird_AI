@@ -50,7 +50,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     try:
         learn(policy=policy, env=env, nsteps=128, nminibatches=10,
-            lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
+            lam=0.95, gamma=0.99, noptepochs=4, log_interval=10,
             ent_coef=entropy_coef,
             lr=lambda f : f * initial_lr,
             cliprange=lambda f : f * 0.1,

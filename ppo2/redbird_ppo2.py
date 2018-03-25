@@ -168,8 +168,16 @@ class Runner(object):
                 test_imgs.append(info.get("test_img"))
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
-            # loss = self.model2.train(self.obs[:], imgs, lrnow)  # TODO anneal lr
-            loss = self.model2.train(test_obs, test_imgs, lrnow)
+            # loss = self.model2.train(self.obs[:], imgs, 4*lrnow)
+            # for i in range(2):
+            #     self.model2.train(self.obs[:], imgs, lrnow)
+            # genEnvLosses.append(loss)
+            # while True:
+            #     loss = self.model2.train(self.obs[:], imgs, lrnow)
+            #     if not all(los >= 250 for los in loss):
+            #         break
+
+            loss = self.model2.train(test_obs, test_imgs, 4*lrnow)
             genEnvLosses.append(loss)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
@@ -237,10 +245,10 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     max_grad_norm=max_grad_norm, gpu=gpu)
 
     import gym
-    from Redbird_AI.common.policies import RevConv
+    from Redbird_AI.common.policies import RevConv2
     from Redbird_AI.modelEnv import Model2
     import math
-    make_model2 = lambda : Model2(policy=RevConv,
+    make_model2 = lambda : Model2(policy=RevConv2,
                     ob_space=gym.spaces.Box(np.array([0, 0, 0, False]), np.array([20.0, 20.0, math.pi*2, True]), dtype=np.float32),
                     ac_space=gym.spaces.Box(0, 255, [64, 64]), nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=10, #TODO remove hardcode

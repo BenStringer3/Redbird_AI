@@ -40,8 +40,8 @@ class Model2(object):
                 ob_img_tru = OB_IMG_TRUE
             if tru_img_shape[0] != img_shape[0] or tru_img_shape[1] != img_shape[1]:
                 ob_img_tru = tf.image.resize_images(ob_img_tru, [img_size, img_size], align_corners=True, method=3)
-            ob_img_tru = tf.cast(ob_img_tru, tf.float32)
-
+            # ob_img_tru = tf.clip_by_value(tf.cast(ob_img_tru, tf.float32) + tf.random_normal(ob_img_tru.shape, mean=6.0, stddev=3.), 0.0, 255.0)
+            ob_img_tru =tf.cast(ob_img_tru, tf.float32)
 
             loss = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru))
             # loss = tf.reduce_mean(tf.square(act_model.ob_img - ob_img_tru))
@@ -60,9 +60,9 @@ class Model2(object):
                     tf.summary.image("ob_img_tru", [ob_img_tru[i, :, :, :]])
                     tf.summary.image("ob_img", [train_model2.Y[i, :, :, :]])
                 # tf.summary.image("ob_img", [act_model.ob_img[0, :, :, :]])
-                for grad in general_grads:
-                    if grad is not None:
-                        tf.summary.histogram("grad sum", grad)
+                # for grad in general_grads:
+                #     if grad is not None:
+                #         tf.summary.histogram("grad sum", grad)
             summaries = tf.summary.merge_all(scope='images')# + tf.summary.merge_all(scope='genEnv')
             writer = tf.summary.FileWriter(logger.get_dir() + '/imgs')
 
@@ -77,18 +77,17 @@ class Model2(object):
             #first
             masks = [True] * train_model.M.shape[0]
             a = sess.run(train_model.S, feed_dict={train_model.S: train_model.initial_state})
-            td_map = {train_model.X: grs[0], train_model.M: masks}
-            a = sess.run(train_model.state_op.op, td_map)
 
             #middle rmbas
-            masks = [False] * train_model.M.shape[0]
-            for gr in grs[1:-1]:
+
+            for gr in grs:
                 td_map = {train_model.X:gr, train_model.M:masks}
-                a = sess.run(train_model.state_op.op, td_map)
+                sess.run([train_model.lstm_op.op, train_model.state_op.op],  td_map) # train_model.lstm_op.op,
+                masks = [False] * train_model.M.shape[0]
 
             #last rmba
-            td_map = {train_model.X: grs[-1], train_model.M: masks}
-            a = sess.run(train_model.lstm_op.op, td_map)
+            # td_map = {train_model.X: grs[-1], train_model.M: masks}
+            # a = sess.run(train_model.state_op.op, train_model.lstm_op.op, td_map)
 
             ob_img_true = np.array(ob_img_true)
             # td_map = {train_model.IS_TRAINING:True, train_model.REV_CONV:lstm, OB_IMG_TRUE:ob_img_true, LR:lr }
@@ -96,6 +95,7 @@ class Model2(object):
             # if states is not None:
             #     td_map[train_model.S] = states
             #     td_map[train_model.M] = masks
+
             train.counter += 1
             if train.counter % 200 ==  0: #TODO make optional argument
                 stuff =  sess.run([loss,  summaries, train_op],td_map)[:-1]
