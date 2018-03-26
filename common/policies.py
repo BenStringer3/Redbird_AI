@@ -448,7 +448,7 @@ class LSTM_GR_Viewer(object):
         nenv = nbatch // nsteps
         M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
         S = tf.get_variable(name="state", shape=[nenv, nlstm*2], trainable=False )
-        LSTM = tf.get_variable(name="lstm_var", shape=[nenv, nlstm], trainable=False )
+        # LSTM = tf.get_variable(name="lstm_var", shape=[nenv, nlstm], trainable=False )
 
         with tf.variable_scope(name, reuse=reuse):
             xs = batch_to_seq(X, nenv, nsteps)
@@ -456,7 +456,7 @@ class LSTM_GR_Viewer(object):
             h4, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
             state_op = S.assign(snew)
             h5 = seq_to_batch(h4)
-            lstm_op = LSTM.assign(h5)
+            # lstm_op = LSTM.assign(h5)
 
 
         # def step(ob, *_args, **_kwargs): #TODO this won't work for recurrent rn
@@ -464,10 +464,10 @@ class LSTM_GR_Viewer(object):
 
         self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
         self.X = X
-        self.Y = LSTM
+        self.Y = h5#LSTM
         self.M = M
         self.S = S
-        self.lstm_op = lstm_op#h5
+        # self.lstm_op = lstm_op#h5
         self.state_op = state_op
 
 class RevConv2(object):

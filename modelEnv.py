@@ -40,14 +40,17 @@ class Model2(object):
                 ob_img_tru = OB_IMG_TRUE
             if tru_img_shape[0] != img_shape[0] or tru_img_shape[1] != img_shape[1]:
                 ob_img_tru = tf.image.resize_images(ob_img_tru, [img_size, img_size], align_corners=True, method=3)
-            # ob_img_tru = tf.clip_by_value(tf.cast(ob_img_tru, tf.float32) + tf.random_normal(ob_img_tru.shape, mean=6.0, stddev=3.), 0.0, 255.0)
-            ob_img_tru =tf.cast(ob_img_tru, tf.float32)
+
+            rand = tf.random_normal((), mean=3.0, stddev=2.)
+            ob_img_tru = tf.cast(ob_img_tru, tf.float32)
+            ob_img_tru_w_noise = tf.clip_by_value(ob_img_tru + tf.random_normal(ob_img_tru.shape, mean=rand, stddev=3.), 0.0, 255.0)
 
             loss = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru))
+            loss_w_noise = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru_w_noise))
             # loss = tf.reduce_mean(tf.square(act_model.ob_img - ob_img_tru))
 
             params = tf.trainable_variables(name)# + tf.trainable_variables(name + 'Rev_Conv')
-            grads = tf.gradients(loss, params)
+            grads = tf.gradients(loss_w_noise, params)
             if max_grad_norm is not None:
                 general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
             grads = list(zip(general_grads, params))
@@ -57,7 +60,7 @@ class Model2(object):
 
             with tf.variable_scope("images"):
                 for i in range(3): #TODO assumes there are at lest 3 nbatch_acts
-                    tf.summary.image("ob_img_tru", [ob_img_tru[i, :, :, :]])
+                    tf.summary.image("ob_img_tru", [ob_img_tru_w_noise[i, :, :, :]])
                     tf.summary.image("ob_img", [train_model2.Y[i, :, :, :]])
                 # tf.summary.image("ob_img", [act_model.ob_img[0, :, :, :]])
                 # for grad in general_grads:
@@ -80,9 +83,9 @@ class Model2(object):
 
             #middle rmbas
 
-            for gr in grs:
+            for gr in grs[:-1]:
                 td_map = {train_model.X:gr, train_model.M:masks}
-                sess.run([train_model.lstm_op.op, train_model.state_op.op],  td_map) # train_model.lstm_op.op,
+                sess.run([train_model.Y, train_model.state_op.op],  td_map) # train_model.lstm_op.op,
                 masks = [False] * train_model.M.shape[0]
 
             #last rmba
@@ -91,10 +94,7 @@ class Model2(object):
 
             ob_img_true = np.array(ob_img_true)
             # td_map = {train_model.IS_TRAINING:True, train_model.REV_CONV:lstm, OB_IMG_TRUE:ob_img_true, LR:lr }
-            td_map = {train_model2.IS_TRAINING: True, OB_IMG_TRUE: ob_img_true, LR: lr}
-            # if states is not None:
-            #     td_map[train_model.S] = states
-            #     td_map[train_model.M] = masks
+            td_map = {train_model2.IS_TRAINING: True, train_model.X:grs[-1], OB_IMG_TRUE:ob_img_true, train_model.M:masks, LR: lr}
 
             train.counter += 1
             if train.counter % 200 ==  0: #TODO make optional argument

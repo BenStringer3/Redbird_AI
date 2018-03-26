@@ -168,7 +168,7 @@ class Runner(object):
                 test_imgs.append(info.get("test_img"))
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
-            # loss = self.model2.train(self.obs[:], imgs, 4*lrnow)
+            loss = self.model2.train(self.obs[:], imgs, 4*lrnow)
             # for i in range(2):
             #     self.model2.train(self.obs[:], imgs, lrnow)
             # genEnvLosses.append(loss)
@@ -177,7 +177,7 @@ class Runner(object):
             #     if not all(los >= 250 for los in loss):
             #         break
 
-            loss = self.model2.train(test_obs, test_imgs, 4*lrnow)
+            # loss = self.model2.train(test_obs, test_imgs, 4*lrnow)
             genEnvLosses.append(loss)
             mb_rewards.append(rewards)
         #batch of steps to batch of rollouts
