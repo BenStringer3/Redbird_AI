@@ -128,12 +128,18 @@ class Model(object):
 
 class Runner(object):
 
-    def __init__(self, *, env, model, model2, nsteps, gamma, lam):
+    def __init__(self, *,  env, model, model2, nsteps, gamma, lam):
         self.env = env
+        nenv = env.num_envs
+        # self.testEnv = testEnv
+
+        # self.obs2 = np.zeros((nenv, ), dtype=tuple)#model2.train_model.X.dtype.name)
+        # self.obs2 = self.testEnv.reset()
+
         self.model = model
         self.model2 = model2
 
-        nenv = env.num_envs
+
 
         self.obs = np.zeros((nenv,) + env.observation_space.shape, dtype=model.train_model.X.dtype.name)
         self.obs[:] = env.reset()
@@ -162,13 +168,30 @@ class Runner(object):
             imgs = []
             test_obs = []  # TODO remove test stuff
             test_imgs = []
+            fov_masks = []
+            test_fov_masks = []
             for info in infos:
                 imgs.append(info.get("img"))
                 test_obs.append(info.get("test_ob"))
                 test_imgs.append(info.get("test_img"))
                 maybeepinfo = info.get('episode')
+                fov_masks.append(info.get("fov_mask"))
+                test_fov_masks.append(info.get("test_fov_mask"))
                 if maybeepinfo: epinfos.append(maybeepinfo)
-            loss = self.model2.train(self.obs[:], imgs, 4*lrnow)
+            loss = self.model2.train(self.obs[:] * fov_masks, imgs, 4 * lrnow)
+            # loss = self.model2.train(np.array(test_obs[:]) * np.array(test_fov_masks), test_imgs, 4 * lrnow)
+            # self.obs2[:], rewards2, self.dones2, infos2 = self.testEnv.step(actions)
+            # imgs2 = []
+            # test_obs2 = []  # TODO remove test stuff
+            # test_imgs2 = []
+            # fov_masks =[]
+            # for info in infos2:
+            #     imgs2.append(info.get("img"))
+            #     test_obs2.append(info.get("test_ob"))
+            #     test_imgs2.append(info.get("test_img"))
+            #     fov_masks.append(info.get("fov_mask"))
+            # loss = self.model2.train(test_obs2 * fov_masks, imgs2, 4 * lrnow)
+            # loss = self.model2.train(self.obs2[:] * fov_masks, imgs2, 4*lrnow)
             # for i in range(2):
             #     self.model2.train(self.obs[:], imgs, lrnow)
             # genEnvLosses.append(loss)
@@ -240,17 +263,38 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     nbatch = nenvs * nsteps
     nbatch_train = nbatch // nminibatches
 
+
+
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm, gpu=gpu)
 
     import gym
-    from Redbird_AI.common.policies import RevConv2
     from Redbird_AI.modelEnv import Model2
     import math
-    make_model2 = lambda : Model2(policy=RevConv2,
-                    ob_space=gym.spaces.Box(np.array([0, 0, 0, False]), np.array([20.0, 20.0, math.pi*2, True]), dtype=np.float32),
-                    ac_space=gym.spaces.Box(0, 255, [64, 64]), nbatch_act=nenvs, nbatch_train=nbatch_train,
+    # TODO remove test env stuff
+    # from Redbird_AI.common.cmd_util import make_env
+    # from baselines.common import set_global_seeds
+    # from baselines.common.vec_env.vec_normalize import VecNormalize
+    # from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+    # # begin mujoco style
+    # def make_env_fn(rank, env_id):
+    #     def _thunk():
+    #         testEnv = make_env(env_id, 120000, rank, int(time.time()))
+    #         return testEnv
+    #
+    #     return _thunk
+    #
+    # set_global_seeds(int(time.time()))
+    # # end mujoco style
+    #
+    # envs = [make_env_fn(i, "IARC_Game_Board-v4") for i in range(nenvs)]
+    # testEnv = SubprocVecEnv(envs)
+    # testEnv = VecNormalize(testEnv, ret=True)
+    make_model2 = lambda : Model2(policy=None,
+                    ob_space=gym.spaces.Box(np.array([0, 0]), np.array([20.0, 20.0]), dtype=np.float32),
+                    ac_space=gym.spaces.Box(0, 255, [64, 64]),
+                    nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=10, #TODO remove hardcode
                     max_grad_norm=max_grad_norm)
 
@@ -259,9 +303,13 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     writer = tf.summary.FileWriter(logger.get_dir() + '/tb/', tf.get_default_graph())
     writer.close()
     if loadModel is not None:
-        env.ob_rms, env.ret_rms = load_model(loadModel)
+        ob_rms, env.ret_rms = load_model(loadModel)
+        if env.ob_rms.mean.shape ==  ob_rms.mean.shape:
+            env.ob_rms = ob_rms
+        else:
+            print("couldn't isntall observation scaling")
 
-    runner = Runner(env=env, model=model, model2=model2, nsteps=nsteps, gamma=gamma, lam=lam)
+    runner = Runner( env=env, model=model, model2=model2, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()

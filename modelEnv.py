@@ -24,11 +24,13 @@ class Model2(object):
             # #TODO: watchout, I changed this training model to be like the act model
             # train_model = act_model
 
-            X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X_act")
-            act_model = LSTM_GR_Viewer(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + '_LSTM_GR_Viewer')
-            act_model2 = RevConv2(act_model.Y, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + 'Rev_Conv')
-            train_model = act_model
-            train_model2 = act_model2
+            try:
+                X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X_act")
+            except TypeError:
+                X = tf.placeholder(tf.float32, (nbatch_act, ob_space.spaces[0].shape[0]), "X_act")
+            lstm_viewer = LSTM_GR_Viewer(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + '_LSTM_GR_Viewer')
+            rev_conv = RevConv2(lstm_viewer.Y, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)# + 'Rev_Conv')
+
 
             LR = tf.placeholder(tf.float32, [], name="LR2")
 
@@ -45,8 +47,8 @@ class Model2(object):
             ob_img_tru = tf.cast(ob_img_tru, tf.float32)
             ob_img_tru_w_noise = tf.clip_by_value(ob_img_tru + tf.random_normal(ob_img_tru.shape, mean=rand, stddev=3.), 0.0, 255.0)
 
-            loss = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru))
-            loss_w_noise = tf.reduce_mean(tf.square(train_model2.Y - ob_img_tru_w_noise))
+            loss = tf.reduce_mean(tf.square(rev_conv.Y - ob_img_tru))
+            loss_w_noise = tf.reduce_mean(tf.square(rev_conv.Y - ob_img_tru_w_noise))
             # loss = tf.reduce_mean(tf.square(act_model.ob_img - ob_img_tru))
 
             params = tf.trainable_variables(name)# + tf.trainable_variables(name + 'Rev_Conv')
@@ -61,7 +63,7 @@ class Model2(object):
             with tf.variable_scope("images"):
                 for i in range(3): #TODO assumes there are at lest 3 nbatch_acts
                     tf.summary.image("ob_img_tru", [ob_img_tru_w_noise[i, :, :, :]])
-                    tf.summary.image("ob_img", [train_model2.Y[i, :, :, :]])
+                    tf.summary.image("ob_img", [rev_conv.Y[i, :, :, :]])
                 # tf.summary.image("ob_img", [act_model.ob_img[0, :, :, :]])
                 # for grad in general_grads:
                 #     if grad is not None:
@@ -70,34 +72,51 @@ class Model2(object):
             writer = tf.summary.FileWriter(logger.get_dir() + '/imgs')
 
         def train(ob, ob_img_true, lr):#, masks, states=None):
-            grs = []
-            for i in range(0, 40 , 4): #TODO remove hardcoded observation separation
-                grs.append(np.array(ob)[:, i:i+4])
-            # for gr in grs:
-            #     td_map = {train_model.X:gr, train_model.S:states, train_model.M:masks}
-            #     lstm, states = sess.run([train_model.LSTM, train_model.snew], td_map)
+            nenvs = ob.shape[0]
+            grs = np.ones([nenvs, 10, 2]) * np.nan
+            iter = [0] * nenvs
+            for i in range(nenvs):
+                for j in range(0, 40 , 4):
+                    rmba = np.array(ob)[i, j:j+2]
+                    grs[i,iter[i],:] = rmba
+                    if not np.isnan(rmba).any():
+                        iter[i] += 1
 
-            #first
-            masks = [True] * train_model.M.shape[0]
-            a = sess.run(train_model.S, feed_dict={train_model.S: train_model.initial_state})
+            #first-----------------------------------------
+            # forget all prior GR's in GR-viewer
+            masks1 = [True] * lstm_viewer.M.shape[0]
+            #start GR-viewer with a blank memory
+            sess.run(lstm_viewer.S, feed_dict={lstm_viewer.S: lstm_viewer.initial_state})
+            memories = np.zeros(lstm_viewer.S.shape)
 
-            #middle rmbas
-
-            for gr in grs[:-1]:
-                td_map = {train_model.X:gr, train_model.M:masks}
-                sess.run([train_model.Y, train_model.state_op.op],  td_map) # train_model.lstm_op.op,
-                masks = [False] * train_model.M.shape[0]
-
-            #last rmba
-            # td_map = {train_model.X: grs[-1], train_model.M: masks}
-            # a = sess.run(train_model.state_op.op, train_model.lstm_op.op, td_map)
+            #all rmbas but the last
+            for i in range(10 - 1):
+                gr = grs[:, i, :]
+                td_map = {lstm_viewer.M:masks1}
+                masks1 = np.prod(np.isnan(gr), axis=1)
+                where_are_NaNs = np.isnan(gr)
+                gr[where_are_NaNs] = 0
+                td_map[lstm_viewer.X ] = gr
+                _, states1 = sess.run([lstm_viewer.Y, lstm_viewer.state_op],  td_map) # train_model.lstm_op.op,
+                for j in range(nenvs):
+                    if not masks1[j]:
+                        memories[j] = states1[j]
 
             ob_img_true = np.array(ob_img_true)
-            # td_map = {train_model.IS_TRAINING:True, train_model.REV_CONV:lstm, OB_IMG_TRUE:ob_img_true, LR:lr }
-            td_map = {train_model2.IS_TRAINING: True, train_model.X:grs[-1], OB_IMG_TRUE:ob_img_true, train_model.M:masks, LR: lr}
+
+            #last GR
+            last_gr = np.array([grs[i, iter[i]-1, :] for i in range(nenvs)])
+            masks1 = np.prod(np.isnan(last_gr), axis=1)
+            where_are_NaNs = np.isnan(grs)
+            grs[where_are_NaNs] = 0
+            last_gr = np.array([grs[i, iter[i] - 1, :] for i in range(nenvs)])
+            td_map = {rev_conv.IS_TRAINING: True, lstm_viewer.X:last_gr,
+                      OB_IMG_TRUE:ob_img_true, lstm_viewer.M:masks1, LR: lr,
+                      lstm_viewer.S:memories}
+
 
             train.counter += 1
-            if train.counter % 200 ==  0: #TODO make optional argument
+            if train.counter % 195 ==  0: #TODO make optional argument
                 stuff =  sess.run([loss,  summaries, train_op],td_map)[:-1]
                 writer.add_summary(stuff[-1], global_step=logger.Logger.CURRENT.output_formats[0].step)
                 writer.flush()
