@@ -25,7 +25,14 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False, gpu=0):
 
         model = make_model()
     if loadModel is not None:
-        env.ob_rms, env.ret_rms = load_model(loadModel)
+        ob_rms, env.ret_rms = load_model(loadModel)
+        try:
+            if env.ob_rms.mean.shape == ob_rms.mean.shape:
+                env.ob_rms = ob_rms
+            else:
+                print("couldn't isntall observation scaling")
+        except:
+            print("couldn't isntall observation scaling")
         #load(loadModel)
         # import pickle
         # try:
@@ -90,7 +97,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     env = DummyVecEnv([make_env])
     env.num_envs = 1
-    env = VecNormalize(env)
+    env = VecNormalize(env, ret=True, ob=False)
     set_global_seeds(seed)
     #end mujoco style
 

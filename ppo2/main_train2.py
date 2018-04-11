@@ -39,7 +39,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     envs = [make_env_fn(i, env_id) for i in range(nenv)]
     env = SubprocVecEnv(envs)
-    env = VecNormalize(env, ret=True)
+    env = VecNormalize(env, ret=True, ob=False)
 
     policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5, 'LstmPolicy': LstmPolicy}[policy]
 
