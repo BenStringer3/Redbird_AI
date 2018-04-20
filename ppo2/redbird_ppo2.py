@@ -214,7 +214,9 @@ class Runner(object):
             mb_imgs.append(self.imgs)
         #batch of steps to batch of rollouts
         # mb_genEnvLosses = np.asarray(genEnvLosses, dtype=np.float32)
+
         mb_imgs = np.asarray(mb_imgs, dtype=np.uint8)
+
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions)
