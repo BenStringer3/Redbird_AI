@@ -55,7 +55,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
             lr=lambda f : f * initial_lr,
             cliprange=lambda f : f * 0.1,
             total_timesteps=int(num_timesteps * 1.1),
-            save_interval=500, loadModel=loadModel,
+            save_interval=1000, loadModel=loadModel,
               gpu=gpu)
     except KeyboardInterrupt:
         print('keyboard interrupt triggered. Attempting clean exit')
