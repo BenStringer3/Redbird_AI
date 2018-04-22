@@ -4,7 +4,7 @@ sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
 
 from baselines import logger
 from Redbird_AI.ppo2.redbird_ppo2 import learn
-from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, MlpPolicy5, LstmPolicy
+from Redbird_AI.common.policies import  MlpPolicy3, MlpPolicy4, LstmPolicy3, LstmPolicy
 import multiprocessing
 import tensorflow as tf
 from baselines.common import set_global_seeds
@@ -41,7 +41,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     env = SubprocVecEnv(envs)
     env = VecNormalize(env, ret=True, ob=False)
 
-    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5, 'LstmPolicy': LstmPolicy}[policy]
+    policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'LstmPolicy3': LstmPolicy3, 'LstmPolicy': LstmPolicy}[policy]
 
     if anneal_ent_coef==0:
         entropy_coef = ent_coef

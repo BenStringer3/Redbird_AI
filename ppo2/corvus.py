@@ -4,6 +4,7 @@ from baselines import logger
 import gym
 from gym import spaces
 from Redbird_AI.modelEnv import Model2
+from Redbird_AI.common.policies import LSTM_GR_Viewer
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
@@ -16,10 +17,19 @@ class Model(object):
             else:
                 nact = np.sum(ac_space.nvec)
 
-            self.X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
-            act_model = policy( self.X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
-            X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
-            train_model = policy( X, sess, nact, ac_space, nbatch_train, nsteps,nlstm=512, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
+            self.aav_pos_act = tf.placeholder(tf.float32, (nbatch_act, 2), "aav_pos_act")
+            aav_pos_train = tf.placeholder(tf.float32, (nbatch_train, 2), "aav_pos_train")
+            self.X = tf.placeholder(tf.float32, (nbatch_act, 4), "X")
+            X = tf.placeholder(tf.float32, (nbatch_train, 4), "X_1")
+            lstm_viewer_train = LSTM_GR_Viewer(X, sess=None, nact=None, ac_space=None,
+                                         nbatch=nbatch_train, nsteps=nsteps, nlstm=66, reuse=False,
+                                         name='GR_viewer')
+            lstm_viewer_act = LSTM_GR_Viewer(self.X, sess=None, nact=None, ac_space=None,
+                                         nbatch=nbatch_act, nsteps=1, nlstm=66, reuse=True,
+                                         name='GR_viewer')
+            act_model = policy( tf.concat((lstm_viewer_act.Y, self.aav_pos_act),1), sess, nact, ac_space, nbatch_act, 1, nlstm=32, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+
+            train_model = policy( tf.concat((lstm_viewer_train.Y, aav_pos_train),1), sess, nact, ac_space, nbatch_train, nsteps,nlstm=32, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
             A = train_model.pdtype.sample_placeholder([None])
             ADV = tf.placeholder(tf.float32, [None])
@@ -70,10 +80,36 @@ class Model(object):
 
 
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, ent_coeff, states=None):
+
+            nenvs = obs.shape[0]
+            grs = []
+
+            for j in range(0, 40, 4):
+                rmba = np.array(obs)[:, j:j + 4]
+                grs.append(rmba)
+
+            # first-----------------------------------------
+            # forget all prior GR's in GR-viewer
+            masks1 = [True] * lstm_viewer_train.M.shape[0]
+            states1 = lstm_viewer_train.initial_state
+
+            # all rmbas but the last
+            for gr in grs[:-1]:
+                td_map = {lstm_viewer_train.M: masks1, lstm_viewer_train.S: states1}
+                masks1 = [False] * lstm_viewer_train.M.shape[0]
+                td_map[lstm_viewer_train.X] = gr
+                _, states1 = sess.run([lstm_viewer_train.Y, lstm_viewer_train.snew], td_map)  # train_model.lstm_op.op,
+
+
+            # start of regular train
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
-            td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
-                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values, ENT_COEFF:ent_coeff}
+            td_map = {lstm_viewer_train.X:grs[-1], lstm_viewer_train.S:states1, lstm_viewer_train.M:masks1,
+                      aav_pos_train:obs[:,40:42],
+                      A: actions, ADV: advs, R: returns, LR: lr,
+                      CLIPRANGE: cliprange, OLDNEGLOGPAC: neglogpacs, OLDVPRED: values, ENT_COEFF: ent_coeff}
+            # td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
+            #         CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values, ENT_COEFF:ent_coeff}
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
@@ -119,6 +155,7 @@ class Model(object):
         self.train = train
         self.train_model = train_model
         self.act_model = act_model
+        self.lstm_viewer_act = lstm_viewer_act
         self.step = act_model.step
         self.value = act_model.value
         self.initial_state = act_model.initial_state
@@ -175,6 +212,32 @@ class Corvus(object):
         td_map = {self.policy_model.X: policy_obs, self.policy_model.S: policy_states, self.policy_model.M: policy_masks}
         return self.sess.run([self.policy_model.A, self.policy_model.vf, self.policy_model.snew, self.policy_model.neglogp0], td_map)
 
+    def step3(self, policy_obs, policy_states,  policy_masks=None):
+        nenvs = policy_obs.shape[0]
+        grs = []
+
+        for j in range(0, 40, 4):
+            rmba = np.array(policy_obs)[:, j:j + 4]
+            grs.append(rmba)
+
+        # first-----------------------------------------
+        # forget all prior GR's in GR-viewer
+        masks1 = [True] * self.policy_model.lstm_viewer_act.M.shape[0]
+        states1 = self.policy_model.lstm_viewer_act.initial_state
+
+        # all rmbas but the last
+        for gr in grs[:-1]:
+            td_map = {self.policy_model.lstm_viewer_act.M: masks1, self.policy_model.lstm_viewer_act.S: states1}
+            masks1 = [False] * self.policy_model.lstm_viewer_act.M.shape[0]
+            td_map[self.policy_model.lstm_viewer_act.X] = gr
+            _, states1 = self.sess.run([self.policy_model.lstm_viewer_act.Y, self.policy_model.lstm_viewer_act.snew], td_map)  # train_model.lstm_op.op,
+        td_map = {self.policy_model.lstm_viewer_act.X: grs[-1], self.policy_model.lstm_viewer_act.S:states1, self.policy_model.lstm_viewer_act.M:masks1,
+                  self.policy_model.aav_pos_act: policy_obs[:,40:42],
+                  self.policy_model.S: policy_states,
+                  self.policy_model.M: policy_masks}
+        return self.sess.run(
+            [self.policy_model.A, self.policy_model.vf, self.policy_model.snew, self.policy_model.neglogp0], td_map)
+
     def step2(self, lr, imgs, policy_obs,  genEnv_obs, policy_states, genEnv_states, policy_masks=None, genEnv_masks=None):
 
         lastGR, feedStates = self._feedGRs(genEnv_obs)
@@ -214,7 +277,31 @@ class Corvus(object):
             return ac, vf, pol_snew, neglogp0, genEnv_loss, genEnv_snew
 
     def value(self, ob, state, mask):
-        return self.sess.run(self.policy_model.vf, {self.policy_model.X:ob, self.policy_model.S: state, self.policy_model.M:mask})
+        # return self.sess.run(self.policy_model.vf, {self.policy_model.X:ob, self.policy_model.S: state, self.policy_model.M:mask})
+        nenvs = ob.shape[0]
+        grs = []
+
+        for j in range(0, 40, 4):
+            rmba = np.array(ob)[:, j:j + 4]
+            grs.append(rmba)
+
+        # first-----------------------------------------
+        # forget all prior GR's in GR-viewer
+        masks1 = [True] * self.policy_model.lstm_viewer_act.M.shape[0]
+        states1 = self.policy_model.lstm_viewer_act.initial_state
+
+        # all rmbas but the last
+        for gr in grs[:-1]:
+            td_map = {self.policy_model.lstm_viewer_act.M: masks1, self.policy_model.lstm_viewer_act.S: states1}
+            masks1 = [False] * self.policy_model.lstm_viewer_act.M.shape[0]
+            td_map[self.policy_model.lstm_viewer_act.X] = gr
+            _, states1 = self.sess.run([self.policy_model.lstm_viewer_act.Y, self.policy_model.lstm_viewer_act.snew], td_map)  # train_model.lstm_op.op,
+        td_map = {self.policy_model.lstm_viewer_act.X: grs[-1], self.policy_model.lstm_viewer_act.S:states1, self.policy_model.lstm_viewer_act.M:masks1,
+                  self.policy_model.aav_pos_act:ob[:,40:42],
+                  self.policy_model.S: state,
+                  self.policy_model.M: mask}
+        return self.sess.run(
+            self.policy_model.vf, td_map)
 
     def train(self,lr, cliprange,  obs,returns, masks, actions, values,
               neglogpacs, imgs, ent_coeff, policy_states=None):

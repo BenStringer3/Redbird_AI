@@ -180,7 +180,7 @@ class Runner(object):
             # actions, values, self.policy_states, neglogpacs, loss, self.genEnv_states = \
             #     self.model.step2(lrnow, self.imgs, self.obs, self.obs,self.policy_states,
             #                     self.genEnv_states, self.dones, self.dones)
-            actions, values, self.policy_states, neglogpacs, = self.model.step(self.obs, self.policy_states, self.dones)
+            actions, values, self.policy_states, neglogpacs, = self.model.step3(self.obs, self.policy_states, self.dones)
 
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)

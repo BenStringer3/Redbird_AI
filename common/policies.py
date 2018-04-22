@@ -315,6 +315,71 @@ class LstmPolicy2(object):
         self.step = step
         self.value = value
 
+class LstmPolicy3(object):
+    # (self, X, sess, nact,  ac_space,  reuse=False, name="model"):
+    def _kernel(self, lyr):
+        return tf.get_default_graph().get_tensor_by_name(os.path.split(lyr.name)[0] + '/kernel:0')
+
+    def __init__(self, X, sess, nact, ac_space, nbatch, nsteps, nlstm=32, reuse=False, name="model"):
+        from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm, fc
+        nenv = nbatch // nsteps # 50 = 50 / 1 #
+
+        M = tf.placeholder(tf.float32, [nbatch], name="M") #mask (done t-1)
+        S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
+
+        with tf.variable_scope(name, reuse=reuse):
+            ob = X
+            l1 = tf.layers.dense(inputs=ob, units=128, activation=tf.nn.tanh, name="l1")
+            l2 = tf.layers.dense(inputs=l1, units=64, activation=tf.nn.tanh, name="l2")
+            l3 = tf.layers.dense(inputs=l2, units=32, activation=tf.nn.relu, name="l3")
+            l4 = tf.layers.dense(inputs=l3, units=32, activation=tf.nn.tanh, name="l4")
+            xs = batch_to_seq(l4, nenv, nsteps)
+            ms = batch_to_seq(M, nenv, nsteps)
+            h5, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
+            h5 = seq_to_batch(h5)
+            l6 = tf.layers.dense(inputs=h5, units=32, activation=tf.nn.tanh, name="l6")
+            l7 = tf.layers.dense(inputs=l6, units=32, activation=tf.nn.relu, name="l7")
+            l8 = tf.layers.dense(inputs=l7, units=16, activation=tf.nn.tanh, name="l8")
+            if isinstance(ac_space, spaces.Box):
+                pi = tf.layers.dense(l8, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(1.0))
+            else:
+                pi = tf.layers.dense(l8, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(0.01))
+            vf = tf.layers.dense(l8, 1,  activation=None, name="value", kernel_initializer=U.normc_initializer(1.0))
+
+            if not reuse:
+                tf.summary.histogram("vf_kernel", self._kernel(vf))
+            #     tf.summary.histogram("pi_kernel", self._kernel(pi))
+            #     tf.summary.histogram("lstm_kernelx", tf.get_default_graph().get_tensor_by_name(name + "/lstm1/wx:0"))
+            #     tf.summary.histogram("lstm_kernelh", tf.get_default_graph().get_tensor_by_name(name + "/lstm1/wh:0"))
+            #     tf.summary.histogram("l2_kernel", self._kernel(l2))
+            #     tf.summary.histogram("l1_kernel", self._kernel(l1))
+            vf = vf[:, 0]
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pi)
+
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
+
+
+
+        def step(ob, state, mask):
+            return sess.run([a0, vf, snew, neglogp0], {X:ob, S:state, M:mask})
+
+        def value(ob, state, mask):
+            return sess.run(vf, {X:ob, S:state, M:mask})
+
+        self.X = X
+        self.M = M
+        self.S = S
+        self.A = a0
+        self.pi = pi
+        self.snew = snew
+        self.neglogp0 = neglogp0
+        self.vf = vf
+        self.step = step
+        self.value = value
+
 class batch_norm(object):
     """Code modification of http://stackoverflow.com/a/33950177"""
     def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
