@@ -23,7 +23,7 @@ def iarc_arg_parser():
     """
     parser = arg_parser()
     parser.add_argument('--render', help='To render or not to render (0 or 1)', type=str2bool, default=False)
-    parser.add_argument('--policy', help='Policy architecture', choices=['MlpPolicy3', 'MlpPolicy4', 'MlpPolicy5', 'LstmPolicy'], default='MlpPolicy3')
+    parser.add_argument('--policy', help='Policy architecture', choices=['MlpPolicy3', 'MlpPolicy4', 'LstmPolicy3', 'LstmPolicy'], default='MlpPolicy3')
     parser.add_argument('--env', help='environment ID', default='IARC_Game_Board-v1')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=int(10e7))
