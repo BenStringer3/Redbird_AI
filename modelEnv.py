@@ -15,54 +15,6 @@ class Model2(object):
         img_shape =  [img_size, img_size, 1]
         tru_img_shape = [tru_img_size, tru_img_size, 1]
         sess = tf.get_default_session()
-<<<<<<< HEAD
-
-        X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X_act")
-        act_model = policy(X, sess, img_size, ac_space, nbatch_act, 1, nlstm=512, reuse=False, name=name)
-        # X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_train")
-        # train_model = policy(X, sess, img_size, ac_space, nbatch_train, nsteps, nlstm=512, reuse=True, name=name)
-        #TODO: watchout, I changed this training model to be like the act model
-        train_model = act_model
-
-        LR = tf.placeholder(tf.float32, [], name="LR2")
-
-        OB_IMG_TRUE = tf.placeholder(
-            tf.float32, [None] + tru_img_shape, name='OB_IMG_TRUE')
-        if tru_img_shape[-1] == 3:
-            ob_img_tru = tf.image.rgb_to_grayscale(OB_IMG_TRUE)
-        else:
-            ob_img_tru = OB_IMG_TRUE
-        if tru_img_shape[0] != img_shape[0] or tru_img_shape[1] != img_shape[1]:
-            ob_img_tru = tf.image.resize_images(ob_img_tru, [img_size, img_size], align_corners=True, method=3)
-
-        loss = tf.reduce_mean(tf.square(train_model.ob_img - ob_img_tru))
-        # loss = tf.reduce_mean(tf.square(act_model.ob_img - ob_img_tru))
-
-        params = tf.trainable_variables(name)
-        grads = tf.gradients(loss, params)
-        if max_grad_norm is not None:
-            general_grads, _grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
-        grads = list(zip(general_grads, params))
-
-        trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5, name="adam2")
-        train_op = trainer.apply_gradients(grads)
-
-        with tf.variable_scope("images"):
-            for i in range(3): #TODO assumes there are at lest 3 nbatch_acts
-                tf.summary.image("ob_img_tru", [ob_img_tru[i, :, :, :]])
-                tf.summary.image("ob_img", [train_model.ob_img[i, :, :, :]])
-            # tf.summary.image("ob_img", [act_model.ob_img[0, :, :, :]])
-        summaries = tf.summary.merge_all(scope='images')# + tf.summary.merge_all(scope='genEnv')
-        writer = tf.summary.FileWriter(logger.get_dir() + '/imgs')
-
-        def train(ob, ob_img_true, lr):#, masks, states=None):
-
-            ob_img_true = np.array(ob_img_true)
-            td_map = {train_model.IS_TRAINING:True, train_model.X:ob, OB_IMG_TRUE:ob_img_true, LR:lr }
-            # if states is not None:
-            #     td_map[train_model.S] = states
-            #     td_map[train_model.M] = masks
-=======
         np.random.seed(int(time.time()))
 
         with tf.device('/gpu:1'):
@@ -178,7 +130,6 @@ class Model2(object):
                 td_map[inGame_memory.S] = states2
                 td_map[inGame_memory.M] = masks2
 
->>>>>>> genEnv-lstm2
             train.counter += 1
             if train.counter % max(num_consec_imgs+1, 0) ==  0: #TODO make optional argument
                 loss_, snew_, summaries_ =  sess.run([loss, inGame_memory.snew, summaries,  train_op],td_map)[:-1]
