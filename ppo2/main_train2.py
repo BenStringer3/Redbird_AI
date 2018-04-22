@@ -39,7 +39,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     envs = [make_env_fn(i, env_id) for i in range(nenv)]
     env = SubprocVecEnv(envs)
-    env = VecNormalize(env, ret=True)
+    env = VecNormalize(env, ret=True, ob=False)
 
     policy = {'MlpPolicy4' : MlpPolicy4, 'MlpPolicy3' : MlpPolicy3, 'MlpPolicy5': MlpPolicy5, 'LstmPolicy': LstmPolicy}[policy]
 
@@ -50,12 +50,12 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     try:
         learn(policy=policy, env=env, nsteps=128, nminibatches=10,
-            lam=0.95, gamma=0.99, noptepochs=3, log_interval=10,
+            lam=0.95, gamma=0.99, noptepochs=4, log_interval=10,
             ent_coef=entropy_coef,
             lr=lambda f : f * initial_lr,
             cliprange=lambda f : f * 0.1,
             total_timesteps=int(num_timesteps * 1.1),
-            save_interval=500, loadModel=loadModel,
+            save_interval=1000, loadModel=loadModel,
               gpu=gpu)
     except KeyboardInterrupt:
         print('keyboard interrupt triggered. Attempting clean exit')

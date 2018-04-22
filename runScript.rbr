@@ -1,0 +1,15 @@
+#/bin/bash
+
+python3 ./ppo2/main_train2.py \
+--logdir=/home/redbird_general/Desktop/BigBoy7/ \
+--nenv=60 \
+--env IARC_Game_Board-v5 \
+--ent_coef=0.01 \
+--gpu=1 \
+--num-timesteps=10000000000 \
+--policy=LstmPolicy \
+--model=/home/redbird_general/Desktop/BigBoy7//test55/checkpoints/final \
+--earlyTermT_ms=480000 \
+--initial_lr=0.00025
+
+

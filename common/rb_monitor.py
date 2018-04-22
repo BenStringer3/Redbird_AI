@@ -26,3 +26,6 @@ class RB_Monitor(Wrapper):
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)
 
+    def get_screen(self):
+        return self.env.get_screen()
+

@@ -248,7 +248,10 @@ class LstmPolicy(object):
         self.X = X
         self.M = M
         self.S = S
+        self.A = a0
         self.pi = pi
+        self.snew = snew
+        self.neglogp0 = neglogp0
         self.vf = vf
         self.step = step
         self.value = value
@@ -308,7 +311,7 @@ class LstmPolicy2(object):
         self.M = M
         self.S = S
         self.pi = pi
-        self.vf = vf
+
         self.step = step
         self.value = value
 
@@ -325,13 +328,46 @@ class batch_norm(object):
         return tf.contrib.layers.batch_norm(x, decay=self.momentum, updates_collections=None, epsilon=self.epsilon,
                                             center=True, scale=True, is_training=train, scope=self.name)
 
-class RevConv(object):
+
+class LSTM_GR_Viewer(object):
+    def __init__(self, X, sess, nact, #nact=image_size [64]
+                 ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
+        from baselines.a2c.utils import batch_to_seq, seq_to_batch, lstm
+
+
+
+        with tf.variable_scope(name, reuse=reuse):
+            nenv = nbatch // nsteps
+            M = tf.placeholder(tf.float32, [nbatch], name="M")  # mask (done t-1)
+            # S = tf.get_variable(name="state", shape=[nenv, nlstm * 2], trainable=False)
+            S = tf.placeholder(tf.float32, [nenv, nlstm * 2], name="S")
+            xs = batch_to_seq(X, nenv, nsteps)
+            ms = batch_to_seq(M, nenv, nsteps)
+            h4, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
+            # state_op = S.assign(snew)
+            h5 = seq_to_batch(h4)
+            # lstm_op = LSTM.assign(h5)
+
+
+        # def step(ob, *_args, **_kwargs): #TODO this won't work for recurrent rn
+        #     return sess.run(ob_img, {X: ob, IS_TRAINING:False})
+
+        self.initial_state = np.zeros((nenv, nlstm * 2), dtype=np.float32)
+        self.X = X
+        self.Y = h5#LSTM
+        self.M = M
+        self.S = S
+        self.snew = snew
+        # self.lstm_op = lstm_op#h5
+        # self.state_op = state_op
+
+class RevConv2(object):
     def __init__(self, X, sess, nact, #nact=image_size [64]
                  ac_space, nbatch, nsteps, nlstm=256, reuse=False, name="model"):
         # Currently, image size must be a (power of 2) and (8 or higher).
         assert(nact & (nact - 1) == 0 and nact >= 8)
 
-        gf_dim = 4 #Dimension of gen filters in first conv layer. [64]
+        gf_dim = 64 #Dimension of gen filters in first conv layer. [64]
         log_size = int(math.log(nact) / math.log(2))
         g_bns = [
             batch_norm(name='g_bn{}'.format(i, )) for i in range(log_size)]
@@ -377,8 +413,6 @@ class RevConv(object):
                     return deconv
 
         with tf.variable_scope(name, reuse=reuse):
-            l1 = tf.layers.dense(inputs=X, units=512 , activation=tf.nn.tanh, name="l1")
-            l2 = tf.layers.dense(inputs=l1, units=512, activation=tf.nn.tanh, name="l2")
             z_, h0_w, h0_b = linear(X, gf_dim * 8 * 4 * 4, 'g_h0_lin', with_w=True)
             # TODO: Nicer iteration pattern here. #readability
             hs = [None]
@@ -397,7 +431,7 @@ class RevConv(object):
                                                with_w=True)
                 hs[i] = tf.nn.relu(g_bns[i](hs[i], IS_TRAINING))
                 img = (hs[i])[0, :, :, -1]
-                tf.summary.image("img" + str(i), tf.reshape(img, [1, img.shape[0], img.shape[1], 1]))
+                # tf.summary.image("img" + str(i), tf.reshape(img, [1, img.shape[0], img.shape[1], 1]))
                 i += 1
                 depth_mul //= 2
                 size *= 2
@@ -408,18 +442,17 @@ class RevConv(object):
                                            [nbatch, size, size, 1], name=name, with_w=True) #TODO channels was 3
 
 
-            ob_img = tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
+            ob_img = 255*tf.nn.sigmoid(hs[i]) #TODO was tanh. why?
             # l1 = tf.layers.dense(inputs=X, units=512, activation=tf.nn.relu, name="l1")
             # l2 = tf.layers.dense(inputs=l1, units=1024 , activation=tf.nn.sigmoid, name="l2")
             # ob_img = tf.reshape(l2, [nbatch, 32, 32, 1])
 
 
-        def step(ob, *_args, **_kwargs):
+        def step(ob, *_args, **_kwargs): #TODO this won't work for recurrent rn
             return sess.run(ob_img, {X: ob, IS_TRAINING:False})
 
         self.initial_state = None
         self.X = X
-        self.ob_img = ob_img
+        self.Y = ob_img
         self.step = step
         self.IS_TRAINING = IS_TRAINING
-
