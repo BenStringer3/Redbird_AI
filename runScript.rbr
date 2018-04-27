@@ -2,12 +2,14 @@
 
 python3 ./ppo2/main_train2.py \
 --logdir=/home/redbird_general/Desktop/BigBoy7/ \
---nenv=60 \
---env IARC_Game_Board-v5 \
+--nenv=300 \
+--env IARC_Game_Board-v6 \
 --ent_coef=0.01 \
 --gpu=1 \
 --num-timesteps=10000000000 \
 --policy=LstmPolicy3 \
---model=/home/redbird_general/Desktop/BigBoy7//test88/checkpoints/final \
---earlyTermT_ms=480000 \
+--model=/home/redbird_general/Desktop/BigBoy7//test113/checkpoints/final \
+--earlyTermT_ms=600000 \
 --initial_lr=0.00025
+
+

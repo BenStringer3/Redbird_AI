@@ -142,7 +142,7 @@ class Runner(object):
         self.lam = lam
         self.nsteps = nsteps
         self.policy_states = model.policy_model.initial_state #model.initial_state
-        self.genEnv_states = model.genEnv_model.initial_state
+        # self.genEnv_states = model.genEnv_model.initial_state
         # self.states2 = model2.initial_state
         self.dones = [False for _ in range(nenv)]
 
@@ -307,7 +307,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     runner = Runner( env=env, model=model,  nsteps=nsteps, gamma=gamma, lam=lam)
 
-    epinfobuf = deque(maxlen=100)
+    epinfobuf = deque(maxlen=nenvs)
     tfirststart = time.time()
 
     nupdates = total_timesteps//nbatch
