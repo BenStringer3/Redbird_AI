@@ -17,9 +17,9 @@ class Model(object):
                 nact = np.sum(ac_space.nvec)
 
             self.X = tf.placeholder(tf.float32, (nbatch_act, ob_space.shape[0]), "X")
-            act_model = policy( self.X, sess, nact, ac_space, nbatch_act, 1, nlstm=512, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
+            act_model = policy( self.X, sess, nact, ac_space, nbatch_act, 1, nlstm=64, reuse=False) # (sess, ob_space, ac_space, [nbatch_act], 1, reuse=False)
             X = tf.placeholder(tf.float32, (nbatch_train, ob_space.shape[0]), "X_1")
-            train_model = policy( X, sess, nact, ac_space, nbatch_train, nsteps,nlstm=512, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
+            train_model = policy( X, sess, nact, ac_space, nbatch_train, nsteps,nlstm=64, reuse=True)#(sess, ob_space, ac_space, [nbatch_train], nsteps, reuse=True)
 
             A = train_model.pdtype.sample_placeholder([None])
             ADV = tf.placeholder(tf.float32, [None])
@@ -146,8 +146,8 @@ class Corvus(object):
                                                            max_grad_norm=max_grad_norm)
 
         self.policy_model = make_policy_model()
-        self.genEnv_model = make_generative_environment_model()
-        self.genEnv_snew = self.genEnv_model.initial_state
+        # self.genEnv_model = make_generative_environment_model()
+        # self.genEnv_snew = self.genEnv_model.initial_state
         self.loss_names = self.policy_model.loss_names
         self.counter = 0
         self.sess = tf.get_default_session()
