@@ -13,7 +13,7 @@ class RB_Monitor(Wrapper):
             del info['rews']
             if done:
                 rewinfo = self.reward_components[0]
-                for step in self.reward_components[:-1]:
+                for step in self.reward_components[1:]:
                     for k, v in step.items():
                         if k in rewinfo:
                              rewinfo[k] += v
