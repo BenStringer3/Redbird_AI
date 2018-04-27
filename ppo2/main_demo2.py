@@ -5,8 +5,9 @@ sys.path.append('/home/redbird_general/Desktop/Redbird_AI2/')
 from baselines import logger
 # from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
-from redbird_ppo2 import learn, Runner, Model
-from Redbird_AI.common.policies import  MlpPolicy3, LstmPolicy
+from redbird_ppo2 import learn, Runner #, Model
+from Redbird_AI.ppo2.corvus import Corvus
+from Redbird_AI.common.policies import  MlpPolicy3, LstmPolicy, LstmPolicy3
 import multiprocessing
 import tensorflow as tf
 import gym
@@ -19,9 +20,9 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False, gpu=0):
     ac_space = env.action_space
 
     with tf.device('/device:GPU:' + str(gpu)):
-        make_model = lambda: Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=1, nbatch_train=nsteps,
+        make_model = lambda: Corvus(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=1, nbatch_train=nsteps,
                                nsteps=nsteps,  vf_coef=0.5,
-                               max_grad_norm=0.5)
+                               max_grad_norm=0.5, gpu=gpu, nenvs=1)
 
         model = make_model()
     if loadModel is not None:
@@ -47,7 +48,7 @@ def demo(*, policy, env, nsteps, loadModel=None, render=False, gpu=0):
     for i in range(25):
         ob = env.reset()
         done = [False]
-        states= model.initial_state
+        states= model.policy_model.initial_state
         while not any(done):
             # ob = np.expand_dims(ob, 0)
             actions, values, states, neglogpacs = model.step(ob, states, done)
@@ -105,7 +106,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     # env = SubprocVecEnv(envs)
     # env = VecNormalize(env)
 
-    policy = {'MlpPolicy3' : MlpPolicy3, 'LstmPolicy':LstmPolicy}[policy]
+    policy = {'MlpPolicy3' : MlpPolicy3, 'LstmPolicy':LstmPolicy, 'LstmPolicy3':LstmPolicy3}[policy]
     demo(policy=policy, env=env, nsteps=128, loadModel=loadModel,render=render, gpu=gpu)
 
 
