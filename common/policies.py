@@ -331,14 +331,14 @@ class LstmPolicy3(object):
             ob = X
             l1 = tf.layers.dense(inputs=ob, units=256, activation=tf.nn.tanh, name="l1")
             l2 = tf.layers.dense(inputs=l1, units=128, activation=tf.nn.tanh, name="l2")
-            l3 = tf.layers.dense(inputs=l2, units=64, activation=tf.nn.relu, name="l3")
+            l3 = tf.layers.dense(inputs=l2, units=64, activation=tf.nn.tanh, name="l3")
             l4 = tf.layers.dense(inputs=l3, units=64, activation=tf.nn.tanh, name="l4")
             xs = batch_to_seq(l4, nenv, nsteps)
             ms = batch_to_seq(M, nenv, nsteps)
             h5, snew = lstm(xs, ms, S, 'lstm1', nh=nlstm)
             h5 = seq_to_batch(h5)
             l6 = tf.layers.dense(inputs=h5, units=64, activation=tf.nn.tanh, name="l6")
-            l7 = tf.layers.dense(inputs=l6, units=32, activation=tf.nn.relu, name="l7")
+            l7 = tf.layers.dense(inputs=l6, units=32, activation=tf.nn.tanh, name="l7")
             l8 = tf.layers.dense(inputs=l7, units=16, activation=tf.nn.tanh, name="l8")
             if isinstance(ac_space, spaces.Box):
                 pi = tf.layers.dense(l8, nact, activation=None, name="logits", kernel_initializer=U.normc_initializer(1.0))
