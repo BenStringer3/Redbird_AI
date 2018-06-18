@@ -10,7 +10,7 @@ import tensorflow as tf
 from baselines.common import set_global_seeds
 from Redbird_AI.common.cmd_util import iarc_arg_parser, make_env, save_model
 import os
-
+from time import sleep
 
 def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadModel, nenv, ent_coef, initial_lr=2.5e-4, gpu=0, anneal_ent_coef=0, debug=False):
     from baselines.common.vec_env.vec_normalize import VecNormalize
@@ -30,6 +30,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
 
     #begin mujoco style
     def make_env_fn(rank, env_id):
+        sleep(0.01) #TODO figure out segmentation fault issue
         def _thunk():
             env = make_env(env_id, earlyTerminationTime_ms, rank, seed)
             return env
@@ -48,6 +49,8 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
     elif anneal_ent_coef==1:
         entropy_coef = lambda f : f*ent_coef
 
+    run_info = "policy=" + policy.__name__ + ", nenvs=" + str(nenv) + ", env_id=" + env_id + ", earlyterm=" + str(earlyTerminationTime_ms) + "initial_lr=" + str(initial_lr)
+
     try:
         learn(policy=policy, env=env, nsteps=128, nminibatches=10,
             lam=0.95, gamma=0.99, noptepochs=4, log_interval=10,
@@ -56,7 +59,7 @@ def train(env_id, num_timesteps, seed, policy, earlyTerminationTime_ms, loadMode
             cliprange=lambda f : f * 0.1,
             total_timesteps=int(num_timesteps * 1.1),
             save_interval=1000, loadModel=loadModel,
-              gpu=gpu)
+              gpu=gpu, run_info=run_info)
     except KeyboardInterrupt:
         print('keyboard interrupt triggered. Attempting clean exit')
         save_model('final', env.ob_rms, env.ret_rms)
